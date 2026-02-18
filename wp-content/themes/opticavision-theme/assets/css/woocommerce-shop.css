@@ -1,0 +1,464 @@
+/**
+ * WooCommerce Shop Layout Styles
+ * Estilos para las páginas de tienda, categorías y productos
+ */
+
+/* ==========================================================================
+   SHOP CONTAINER
+   ========================================================================== */
+
+.opticavision-shop-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 20px;
+}
+
+.opticavision-shop-content {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+/* ==========================================================================
+   FILTERS SIDEBAR
+   ========================================================================== */
+
+.opticavision-filters-sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 100px;
+}
+
+/* Fallback filters styles */
+.basic-filters h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: #102064;
+}
+
+.basic-filters ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.basic-filters li {
+    margin-bottom: 0.5rem;
+}
+
+.basic-filters a {
+    text-decoration: none;
+    color: #333;
+    transition: color 0.3s ease;
+}
+
+.basic-filters a:hover {
+    color: #102064;
+}
+
+.filters-placeholder {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+    color: #666;
+}
+
+/* ==========================================================================
+   PRODUCTS MAIN AREA
+   ========================================================================== */
+
+.opticavision-products-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.woocommerce-products-header {
+    margin-bottom: 2rem;
+}
+
+.woocommerce-products-header__title {
+    font-size: 2rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 1rem;
+}
+
+/* Shop Toolbar */
+.shop-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 0;
+    border-top: 1px solid #e6e6e6;
+    border-bottom: 1px solid #e6e6e6;
+    margin-bottom: 2rem;
+    background: #fafafa;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    border-radius: 8px;
+}
+
+.shop-toolbar-left,
+.shop-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Result count styling */
+.woocommerce-result-count {
+    color: #666;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Ordering dropdown styling */
+.woocommerce-ordering select {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.5rem;
+    background: white;
+    color: #333;
+    font-size: 0.9rem;
+}
+
+/* ==========================================================================
+   CATEGORY PAGE SPECIFIC
+   ========================================================================== */
+
+.opticavision-category-page .woocommerce-products-header__title {
+    color: #000;
+    position: relative;
+}
+
+
+/* Category description styling */
+.term-description {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    color: #666;
+    line-height: 1.6;
+    border-left: 4px solid #1a2b88;
+}
+
+.term-description p {
+    margin: 0;
+}
+
+/* Subcategories display */
+.product-subcategories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.subcategory-link {
+    background: white;
+    border: 1px solid #e6e6e6;
+    padding: 0.75rem 1.5rem;
+    border-radius: 25px;
+    text-decoration: none;
+    color: #333;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.subcategory-link:hover {
+    background: #1a2b88;
+    color: white;
+    border-color: #1a2b88;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(26, 43, 136, 0.2);
+}
+
+/* ==========================================================================
+   PRODUCTS GRID
+   ========================================================================== */
+
+.woocommerce ul.products {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.woocommerce ul.products li.product {
+    min-width: 0; /* Allow flex items to shrink */
+    background: white;
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+    padding: 0.75rem;
+    transition: all 0.3s ease;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.woocommerce ul.products li.product:hover {
+    border-color: #1a2b88;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+/* Product image */
+.woocommerce ul.products li.product img {
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+/* Product title */
+.woocommerce ul.products li.product h2,
+.woocommerce ul.products li.product .woocommerce-loop-product__title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: #333;
+    line-height: 1.3;
+}
+
+/* Product price */
+.woocommerce ul.products li.product .price {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.75rem;
+}
+
+/* Add to cart button */
+.woocommerce ul.products li.product .button {
+    background: #333;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    display: inline-block;
+    width: 100%;
+    text-align: center;
+}
+
+.woocommerce ul.products li.product .button:hover {
+    background: #000;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Hide wishlist/heart buttons */
+.woocommerce ul.products li.product .tinvwl_add_to_wishlist_button,
+.woocommerce ul.products li.product .yith-wcwl-add-to-wishlist,
+.woocommerce ul.products li.product .add_to_wishlist,
+.woocommerce ul.products li.product .wishlist-button,
+.woocommerce ul.products li.product .heart-button,
+.woocommerce ul.products li.product .compare-button,
+.woocommerce ul.products li.product [class*="wishlist"],
+.woocommerce ul.products li.product [class*="heart"],
+.woocommerce ul.products li.product [class*="compare"] {
+    display: none !important;
+}
+
+/* Hide category text above product title */
+.woocommerce ul.products li.product .product-category,
+.woocommerce ul.products li.product .posted_in {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Make product images more compact */
+.woocommerce ul.products li.product img {
+    margin-bottom: 0.75rem;
+}
+
+/* ==========================================================================
+   PAGINATION
+   ========================================================================== */
+
+.woocommerce-pagination {
+    text-align: center;
+    margin-top: 3rem;
+}
+
+/* Hide excessive page numbers for better UX */
+.woocommerce-pagination .page-numbers {
+    display: none;
+}
+
+/* Show only essential pagination elements */
+.woocommerce-pagination .page-numbers.current,
+.woocommerce-pagination .page-numbers.prev,
+.woocommerce-pagination .page-numbers.next,
+.woocommerce-pagination .page-numbers.dots {
+    display: inline-block;
+}
+
+/* Show first, last and pages around current */
+.woocommerce-pagination .page-numbers:first-child,
+.woocommerce-pagination .page-numbers:last-child,
+.woocommerce-pagination .page-numbers:nth-child(-n+3),
+.woocommerce-pagination .page-numbers:nth-last-child(-n+3) {
+    display: inline-block;
+}
+
+.woocommerce-pagination ul {
+    display: inline-flex;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    gap: 0.5rem;
+}
+
+.woocommerce-pagination ul li {
+    margin: 0;
+}
+
+.woocommerce-pagination ul li a,
+.woocommerce-pagination ul li span {
+    display: block;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e6e6e6;
+    background: white;
+    color: #333;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    min-width: 40px;
+    text-align: center;
+}
+
+.woocommerce-pagination ul li a:hover,
+.woocommerce-pagination ul li span.current {
+    background: #333;
+    color: white;
+    border-color: #333;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN
+   ========================================================================== */
+
+@media (max-width: 1200px) {
+    .opticavision-filters-sidebar {
+        width: 220px;
+    }
+    
+    .woocommerce ul.products {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 1024px) {
+    .opticavision-filters-sidebar {
+        position: static;
+        top: auto;
+        width: 200px;
+    }
+    
+    .woocommerce ul.products {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .opticavision-shop-container {
+        padding: 1rem 15px;
+    }
+
+    .opticavision-shop-content {
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .opticavision-filters-sidebar {
+        width: 100%;
+        order: -1;
+        position: relative;
+        top: auto;
+        margin-bottom: 1rem;
+    }
+
+    .shop-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+    }
+    
+    .shop-toolbar-left,
+    .shop-toolbar-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .woocommerce ul.products {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+    
+    .woocommerce ul.products li.product {
+        padding: 0.75rem;
+    }
+
+    /* Category page mobile adjustments */
+    .term-description {
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .product-subcategories {
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .subcategory-link {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .opticavision-shop-container {
+        padding: 0.75rem 10px;
+    }
+    
+    .woocommerce ul.products {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+    
+    .woocommerce ul.products li.product {
+        padding: 0.5rem;
+    }
+    
+    .woocommerce ul.products li.product h2,
+    .woocommerce ul.products li.product .woocommerce-loop-product__title {
+        font-size: 0.9rem;
+    }
+    
+    .woocommerce ul.products li.product .price {
+        font-size: 1rem;
+    }
+    
+    .woocommerce ul.products li.product .button {
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+    }
+}

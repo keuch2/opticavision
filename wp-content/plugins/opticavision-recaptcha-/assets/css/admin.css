@@ -1,0 +1,141 @@
+/**
+ * OpticaVision reCAPTCHA Admin Styles
+ *
+ * @package OpticaVision_Recaptcha
+ */
+
+.opticavision-recaptcha-admin {
+    max-width: 800px;
+    margin: 20px 0;
+}
+
+.opticavision-recaptcha-header {
+    background: #fff;
+    border-left: 4px solid #ff0000;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.opticavision-recaptcha-header p.description {
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 10px 0;
+}
+
+.opticavision-recaptcha-header a {
+    color: #ff0000;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.opticavision-recaptcha-header a:hover {
+    text-decoration: underline;
+}
+
+.opticavision-recaptcha-info {
+    background: #fff;
+    border-left: 4px solid #2271b1;
+    padding: 20px;
+    margin-top: 30px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.opticavision-recaptcha-info h2 {
+    margin-top: 0;
+    font-size: 18px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.opticavision-recaptcha-info ul {
+    list-style: none;
+    padding: 0;
+    margin: 15px 0;
+}
+
+.opticavision-recaptcha-info ul li {
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.opticavision-recaptcha-info ul li:last-child {
+    border-bottom: none;
+}
+
+.opticavision-recaptcha-info ul li strong {
+    display: inline-block;
+    min-width: 120px;
+    color: #333;
+}
+
+/* Form styling improvements */
+.form-table th {
+    width: 200px;
+    padding: 20px 10px 20px 0;
+    vertical-align: top;
+}
+
+.form-table td {
+    padding: 15px 10px;
+}
+
+.form-table input[type="text"],
+.form-table input[type="password"],
+.form-table input[type="number"] {
+    padding: 8px 12px;
+    font-size: 14px;
+}
+
+.form-table p.description {
+    margin-top: 8px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Checkbox list styling */
+.form-table label {
+    font-weight: 500;
+}
+
+/* Success/Error messages */
+.settings-error {
+    margin: 15px 0;
+}
+
+/* Submit button styling */
+.submit .button-primary {
+    background: #ff0000;
+    border-color: #cc0000;
+    box-shadow: 0 1px 0 #cc0000;
+    text-shadow: 0 -1px 1px #cc0000, 1px 0 1px #cc0000, 0 1px 1px #cc0000, -1px 0 1px #cc0000;
+}
+
+.submit .button-primary:hover,
+.submit .button-primary:focus {
+    background: #cc0000;
+    border-color: #990000;
+}
+
+/* Responsive */
+@media (max-width: 782px) {
+    .opticavision-recaptcha-admin {
+        margin: 10px 0;
+    }
+    
+    .opticavision-recaptcha-header,
+    .opticavision-recaptcha-info {
+        padding: 15px;
+    }
+    
+    .form-table th,
+    .form-table td {
+        padding: 10px;
+        display: block;
+        width: 100%;
+    }
+    
+    .form-table th {
+        padding-bottom: 0;
+    }
+}

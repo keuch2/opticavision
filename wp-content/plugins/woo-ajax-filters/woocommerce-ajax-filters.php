@@ -1,0 +1,732 @@
+<?php
+/*
+Plugin Name: WooCommerce AJAX Filters with Dropdowns
+Description: Adds AJAX filters for WooCommerce products with dropdowns for price and installment ranges, hierarchical categories, and a loader animation.
+Version: 2.2.0
+Author: Mister Co.
+Author URI: https://www.mister.com.py
+Changelog:
+- v2.2.0: NUEVAS FUNCIONALIDADES: 1) Cargar TODOS los productos en páginas de marca, 2) Filtros de tipo de producto, 3) Búsqueda por SKU
+- v2.1.9: FIX DEFINITIVO: Usar SIEMPRE ajax-endpoint.php (admin-ajax.php tiene problemas de permisos en todos los browsers)
+- v2.1.8: FIX BÚSQUEDA: Auto-ejecutar loadProducts() en páginas de búsqueda para aplicar filtro de término
+- v2.1.7: FIX CRÍTICO: Permitir inicialización sin filtros (solo paginación) para páginas de búsqueda
+- v2.1.6: FIX Búsqueda: Detectar search_query en múltiples lugares (div, body, URL) para resolver race condition
+- v2.1.5: FIX DEFINITIVO Safari: Endpoint AJAX custom (ajax-endpoint.php) que NO requiere cookies de WordPress
+- v2.1.4: DEBUG Safari: Logging detallado de request/response para identificar problema exacto
+- v2.1.3: Fix DEFINITIVO Safari: withCredentials:true para incluir cookies de sesión WordPress en AJAX (Safari bloqueaba cookies)
+- v2.1.2: Fix ULTRA-AGRESIVO Safari: Limpiar TODOS los buffers, deshabilitar warnings PHP, forzar terminación con wp_die()
+- v2.1.1: Fix CRÍTICO Safari JSON: ob_clean() + headers JSON + try-catch para garantizar JSON válido siempre
+- v2.1.0: Fix CRÍTICO Safari/iOS: Usar $.ajax() con traditional:true para serializar arrays correctamente (bug conocido Safari)
+- v2.0.9: Fix iOS Safari WebKit: usar closest() en event handlers, href válidos para fallback, rel prev/next SEO
+- v2.0.8: Fix CRÍTICO mobile: Removido pagination-arrows.js que causaba conflicto. Un solo handler de paginación en wc-ajax-filters.js
+- v2.0.7: Fix paginación mobile: touch targets 44x44px, z-index, touch-action, mejor UX en pantallas pequeñas
+- v2.0.6: Logging completo PHP (args, query, SQL) para debugging de paginación
+- v2.0.5: Fix DEFINITIVO: Detectar tax-product_cat (no product-category) y extraer slug de term-{slug}
+- v2.0.4: Logging completo para debugging (JS y PHP)
+- v2.0.3: Fix detección de category slug para subcategorías jerárquicas (extrae de URL en vez de clases del body)
+- v2.0.2: Fix interceptar clicks de paginación incluso sin data-page (extrae de href o texto)
+- v2.0.1: Fix crítico de paginación: Inicializar tax_query/meta_query con relation AND, validación mejorada de paged
+*/
+
+// Enqueue Scripts and Styles
+add_action('wp_enqueue_scripts', 'wc_ajax_filters_scripts');
+function wc_ajax_filters_scripts() {
+    // Cargar script principal del filtro
+    wp_enqueue_script('wc-ajax-filters', plugins_url('/js/wc-ajax-filters.js', __FILE__), ['jquery'], '2.1.9', true);
+    
+    // Font Awesome ya se carga desde el tema (opticavision-theme)
+    // No es necesario cargarlo aquí para evitar conflictos
+    
+    // Cargar el CSS del filtro
+    wp_enqueue_style('wc-ajax-filters', plugins_url('/css/wc-ajax-filters.css', __FILE__), [], '2.0.7');
+    
+    // NOTA: pagination-arrows.js removido para evitar conflictos con wc-ajax-filters.js
+    // Todo el manejo de paginación está ahora en wc-ajax-filters.js
+
+    $price_bounds = wc_ajax_filters_get_price_bounds();
+
+    wp_localize_script('wc-ajax-filters', 'wcAjaxFilters', [
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'ajax_url_safari' => plugins_url('/ajax-endpoint.php', __FILE__),  // ⭐ NUEVO: Endpoint custom para Safari
+        'loader_url' => 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Loading_2.gif', // CDN loader URL
+        'currency_symbol' => get_woocommerce_currency_symbol('PYG'),
+        'min_price' => $price_bounds['min'],
+        'max_price' => $price_bounds['max'],
+        'step'      => $price_bounds['step'],
+    ]);
+}
+
+/**
+ * Retrieve min, max and recommended step for the price slider.
+ *
+ * @return array
+ */
+function wc_ajax_filters_get_price_bounds() {
+    global $wpdb;
+
+    $row = $wpdb->get_row(
+        $wpdb->prepare(
+            "SELECT MIN(CAST(pm.meta_value AS DECIMAL(10,2))) AS min_price,
+                    MAX(CAST(pm.meta_value AS DECIMAL(10,2))) AS max_price
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+             WHERE pm.meta_key = %s
+               AND pm.meta_value <> ''
+               AND p.post_type IN ('product', 'product_variation')
+               AND p.post_status = 'publish'",
+            '_price'
+        )
+    );
+
+    $min = isset($row->min_price) ? floatval($row->min_price) : 0;
+    $max = isset($row->max_price) ? floatval($row->max_price) : 0;
+
+    if ($max < $min) {
+        $max = $min;
+    }
+
+    $range = $max - $min;
+    $step = 1000;
+    if ($range > 0) {
+        $step = max(500, round($range / 200, -2)); // Rounded step for smoother slider
+    }
+
+    return [
+        'min' => (int) floor($min),
+        'max' => (int) ceil($max),
+        'step' => max(1, (int) $step),
+    ];
+}
+
+/**
+ * Retrieve brand terms either from attribute taxonomy or Marcas subcategories.
+ *
+ * @return array{
+ *     taxonomy: string,
+ *     terms: WP_Term[]
+ * }
+ */
+function wc_ajax_filters_get_brand_terms() {
+    $attribute_tax = '';
+
+    if (taxonomy_exists('pa_brand')) {
+        $attribute_tax = 'pa_brand';
+    } elseif (taxonomy_exists('brand')) {
+        $attribute_tax = 'brand';
+    }
+
+    if ($attribute_tax) {
+        $terms = get_terms([
+            'taxonomy' => $attribute_tax,
+            'hide_empty' => true,
+            'orderby' => 'name',
+            'order' => 'ASC',
+        ]);
+
+        if (!is_wp_error($terms) && !empty($terms)) {
+            return [
+                'taxonomy' => $attribute_tax,
+                'terms'    => $terms,
+            ];
+        }
+    }
+
+    $marcas_parent = get_term_by('slug', 'marcas', 'product_cat');
+    if ($marcas_parent && !is_wp_error($marcas_parent)) {
+        $terms = get_terms([
+            'taxonomy'   => 'product_cat',
+            'hide_empty' => true,
+            'parent'     => $marcas_parent->term_id,
+            'orderby'    => 'name',
+            'order'      => 'ASC',
+        ]);
+
+        if (!is_wp_error($terms) && !empty($terms)) {
+            return [
+                'taxonomy' => 'product_cat',
+                'terms'    => $terms,
+            ];
+        }
+    }
+
+    return [
+        'taxonomy' => $attribute_tax ?: 'product_cat',
+        'terms'    => [],
+    ];
+}
+
+// AJAX handler for filtering products
+add_action('wp_ajax_wc_ajax_filter', 'wc_ajax_filter_products');
+add_action('wp_ajax_nopriv_wc_ajax_filter', 'wc_ajax_filter_products');
+
+// FIX SAFARI: Agregar prioridad muy temprana para asegurar que se registra antes de que WordPress procese el request
+add_action('init', function() {
+    error_log('[WC AJAX FILTER] Init hook - Re-registrando actions con prioridad alta');
+    add_action('wp_ajax_wc_ajax_filter', 'wc_ajax_filter_products', 1);
+    add_action('wp_ajax_nopriv_wc_ajax_filter', 'wc_ajax_filter_products', 1);
+}, 1);
+
+// DEBUG: Log cuando se carga el plugin
+error_log('[WC AJAX FILTER] Plugin cargado - hooks registrados');
+
+function wc_ajax_filter_products() {
+    // FIX SAFARI CRÍTICO: Limpiar TODOS los output buffers y asegurar JSON 100% limpio
+    // Safari es EXTREMADAMENTE estricto con JSON - cualquier carácter extra rompe todo
+    
+    // Limpiar TODOS los output buffers que puedan existir
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // Iniciar nuevo output buffer limpio
+    ob_start();
+    
+    // Asegurar que enviamos JSON con encoding correcto
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=UTF-8');
+        header('X-Content-Type-Options: nosniff');
+    }
+    
+    // Deshabilitar warnings/notices de PHP que puedan contaminar el JSON
+    $old_error_reporting = error_reporting();
+    error_reporting(E_ERROR | E_PARSE);
+    
+    // Wrap todo en try-catch para capturar errores PHP que Safari no tolera
+    try {
+        // Validar página solicitada - usar absint para garantizar entero positivo
+        $paged = isset($_POST['paged']) ? absint($_POST['paged']) : 1;
+        if ($paged < 1) {
+            $paged = 1;
+        }
+
+        // Logging para debugging (especialmente útil en producción)
+        // NOTA: error_log() NO afecta la salida, solo escribe en archivo de log
+        if (function_exists('error_log')) {
+            error_log(sprintf(
+                '[WC AJAX FILTER] Página solicitada: %d | Categoría: %s | Búsqueda: %s | Marcas: %s',
+                $paged,
+                sanitize_text_field($_POST['category_slug'] ?? 'ninguna'),
+                sanitize_text_field($_POST['search_query'] ?? 'ninguna'),
+                !empty($_POST['brands']) ? count((array) $_POST['brands']) : 0
+            ));
+        }
+    } catch (Exception $e) {
+        // Restaurar error reporting
+        error_reporting($old_error_reporting);
+        
+        // Si hay error, enviar JSON válido de todas formas
+        error_log('[WC AJAX FILTER] ERROR PHP: ' . $e->getMessage());
+        
+        // Limpiar buffer y enviar error
+        ob_end_clean();
+        wp_send_json_error([
+            'message' => 'Error al procesar la solicitud',
+            'error' => $e->getMessage()
+        ]);
+        wp_die();
+    }
+
+    // Inicializar args con tax_query y meta_query correctamente estructurados
+    $args = [
+        'post_type' => 'product',
+        'posts_per_page' => 24,
+        'paged' => $paged,
+        'post_status' => 'publish',
+        'tax_query' => [
+            'relation' => 'AND', // CRÍTICO: Especificar relación entre taxonomías
+        ],
+        'meta_query' => [
+            'relation' => 'AND', // CRÍTICO: Especificar relación entre meta queries
+        ],
+    ];
+
+    // IMPORTANTE: NO aplicar filtro de category_slug si se están usando filtros de marca
+    // Esto permite que las páginas de marca funcionen exactamente como /shop/
+    // Solo se aplica category_slug si NO hay marcas seleccionadas
+    $has_brand_filters = !empty($_POST['brands']) && is_array($_POST['brands']) && count($_POST['brands']) > 0;
+    
+    if (!empty($_POST['category_slug']) && !$has_brand_filters) {
+        $category_slug = sanitize_text_field($_POST['category_slug']);
+        error_log('[WC AJAX FILTER] DEBUG - Category slug recibido: ' . $category_slug);
+        
+        $args['tax_query'][] = [
+            'taxonomy' => 'product_cat',
+            'field' => 'slug',
+            'terms' => $category_slug,
+        ];
+        
+        error_log('[WC AJAX FILTER] DEBUG - tax_query de categoría añadido');
+    } else {
+        if ($has_brand_filters) {
+            error_log('[WC AJAX FILTER] DEBUG - NO se aplica category_slug porque hay filtros de marca activos');
+        } else {
+            error_log('[WC AJAX FILTER] DEBUG - NO se recibió category_slug en POST');
+        }
+    }
+
+    // Apply search query filter
+    if (!empty($_POST['search_query'])) {
+        $args['s'] = sanitize_text_field($_POST['search_query']);
+    }
+
+    // Apply price filter using slider values
+    $min_price = isset($_POST['min_price']) ? floatval($_POST['min_price']) : null;
+    $max_price = isset($_POST['max_price']) ? floatval($_POST['max_price']) : null;
+
+    if (null !== $min_price || null !== $max_price) {
+        $bounds = wc_ajax_filters_get_price_bounds();
+
+        $min_price = null !== $min_price ? max($bounds['min'], $min_price) : $bounds['min'];
+        $max_price = null !== $max_price ? min($bounds['max'], $max_price) : $bounds['max'];
+
+        if ($max_price < $min_price) {
+            $max_price = $min_price;
+        }
+
+        $args['meta_query'][] = [
+            'key' => '_price',
+            'value' => [$min_price, $max_price],
+            'compare' => 'BETWEEN',
+            'type' => 'NUMERIC',
+        ];
+    }
+
+    // Apply selected categories (from the checkboxes)
+    if (isset($_POST['categories']) && is_array($_POST['categories'])) {
+        $args['tax_query'][] = [
+            'taxonomy' => 'product_cat',
+            'field' => 'slug',
+            'terms' => array_map('sanitize_text_field', $_POST['categories']),
+            'operator' => 'AND',
+        ];
+    }
+    
+    // Apply brand filter
+    if (!empty($_POST['brands'])) {
+        $brands = array_filter(array_map('sanitize_text_field', (array) $_POST['brands']));
+        $taxonomy_name = isset($_POST['brand_taxonomy']) ? sanitize_key($_POST['brand_taxonomy']) : '';
+
+        error_log('[WC AJAX FILTER] DEBUG - Marcas recibidas: ' . print_r($brands, true));
+        error_log('[WC AJAX FILTER] DEBUG - Taxonomía recibida: ' . $taxonomy_name);
+        error_log('[WC AJAX FILTER] DEBUG - ¿Taxonomía existe?: ' . (taxonomy_exists($taxonomy_name) ? 'SÍ' : 'NO'));
+
+        if ($taxonomy_name && taxonomy_exists($taxonomy_name) && !empty($brands)) {
+            $args['tax_query'][] = [
+                'taxonomy' => $taxonomy_name,
+                'field' => 'slug',
+                'terms' => $brands,
+                'operator' => 'IN',
+            ];
+            error_log('[WC AJAX FILTER] DEBUG - tax_query de marcas añadida correctamente');
+        } else {
+            error_log('[WC AJAX FILTER] ERROR - No se pudo aplicar filtro de marcas. Taxonomía: ' . $taxonomy_name . ', Marcas vacías: ' . (empty($brands) ? 'SÍ' : 'NO'));
+        }
+    }
+    
+    // Apply product type filter (Armazón, Lentes de Contacto, Lentes de Sol)
+    if (isset($_POST['product_types']) && !empty($_POST['product_types'])) {
+        // Convertir a array si viene como string (por serialización de jQuery)
+        $product_types_raw = $_POST['product_types'];
+        if (!is_array($product_types_raw)) {
+            $product_types_raw = array($product_types_raw);
+        }
+        
+        $product_types = array_filter(array_map('sanitize_text_field', $product_types_raw));
+        error_log('[WC AJAX FILTER] DEBUG - product_types recibidos (raw): ' . print_r($_POST['product_types'], true));
+        error_log('[WC AJAX FILTER] DEBUG - product_types después de sanitizar: ' . print_r($product_types, true));
+        
+        if (!empty($product_types)) {
+            $args['tax_query'][] = [
+                'taxonomy' => 'product_cat',
+                'field' => 'slug',
+                'terms' => $product_types,
+                'operator' => 'IN',  // OR entre tipos de producto
+            ];
+            error_log('[WC AJAX FILTER] DEBUG - Filtro de tipo de producto aplicado correctamente');
+            error_log('[WC AJAX FILTER] DEBUG - tax_query actual: ' . print_r($args['tax_query'], true));
+        } else {
+            error_log('[WC AJAX FILTER] DEBUG - product_types está vacío después de filtrar');
+        }
+    } else {
+        error_log('[WC AJAX FILTER] DEBUG - NO se recibieron product_types');
+    }
+    
+    // FILTROS DESHABILITADOS - Mostrar todos los productos
+    // (sin filtrar por stock ni por imagen)
+
+    // Limpiar tax_query si solo tiene 'relation' y ningún filtro real
+    if (isset($args['tax_query']) && count($args['tax_query']) <= 1) {
+        unset($args['tax_query']);
+    }
+    
+    // Asegurar que meta_query siempre tenga la relación AND si tiene elementos
+    if (isset($args['meta_query']) && count($args['meta_query']) > 0) {
+        if (!isset($args['meta_query']['relation'])) {
+            $args['meta_query']['relation'] = 'AND';
+        }
+    }
+
+    // Log de args antes de ejecutar la query
+    error_log('[WC AJAX FILTER] DEBUG - Args completos antes de WP_Query: ' . print_r($args, true));
+    
+    // Perform the product query
+    $query = new WP_Query($args);
+
+    // Logging de resultados
+    if (function_exists('error_log')) {
+        error_log(sprintf(
+            '[WC AJAX FILTER] Resultados: %d productos | %d páginas totales | Página actual: %d',
+            $query->found_posts,
+            $query->max_num_pages,
+            $paged
+        ));
+        
+        // Log de la SQL query real
+        error_log('[WC AJAX FILTER] DEBUG - SQL ejecutado: ' . $query->request);
+    }
+    
+    // Ya no necesitamos filtro post-query porque filtramos en la query inicial
+    
+    ob_start();
+    if ($query->have_posts()) {
+        echo '<div class="products_ajax columns-4">';
+        while ($query->have_posts()) {
+            $query->the_post();
+            wc_get_template_part('content', 'product');
+        }
+        echo '</div>';
+
+        // Pagination con fallback server-side y SEO
+        $total_pages = $query->max_num_pages;
+        $current_page = $paged;
+        if ($total_pages > 1) {
+            echo '<nav class="woocommerce-pagination" aria-label="Paginación de productos">';
+            
+            // Generar URL base para fallback
+            $base_url = home_url($_SERVER['REQUEST_URI']);
+            $base_url = remove_query_arg('paged', $base_url);
+            $base_url = preg_replace('/\/page\/\d+\//', '/', $base_url);
+            
+            for ($i = 1; $i <= $total_pages; $i++) {
+                $class = ($i == $current_page) ? 'page-numbers current' : 'page-numbers';
+                
+                // Generar href válido para fallback server-side (sin JS)
+                if ($i == 1) {
+                    $href = $base_url;
+                } else {
+                    $href = add_query_arg('paged', $i, $base_url);
+                }
+                
+                // Atributos SEO: rel="prev/next" para primera/última página
+                $rel = '';
+                if ($i == $current_page - 1) {
+                    $rel = ' rel="prev"';
+                } elseif ($i == $current_page + 1) {
+                    $rel = ' rel="next"';
+                }
+                
+                // Aria-label para accesibilidad
+                $aria_label = ($i == $current_page) ? ' aria-label="Página ' . $i . ', actual" aria-current="page"' : ' aria-label="Ir a página ' . $i . '"';
+                
+                echo '<a class="' . esc_attr($class) . '" href="' . esc_url($href) . '" data-page="' . absint($i) . '"' . $rel . $aria_label . '>' . absint($i) . '</a>';
+            }
+            echo '</nav>';
+        }
+    } else {
+        echo '<p>No hay productos para mostrar en la búsqueda seleccionada.</p>';
+    }
+    wp_reset_postdata();
+
+    // Restaurar error reporting original
+    error_reporting($old_error_reporting);
+    
+    // Capturar el contenido HTML generado
+    $html_output = ob_get_clean();
+    
+    // DEBUG SAFARI: Loguear la respuesta antes de enviarla
+    error_log('[WC AJAX FILTER] DEBUG SAFARI - HTML output length: ' . strlen($html_output));
+    error_log('[WC AJAX FILTER] DEBUG SAFARI - First 200 chars: ' . substr($html_output, 0, 200));
+    
+    // Preparar respuesta JSON
+    $response = array(
+        'success' => true,
+        'data' => $html_output
+    );
+    
+    // Loguear JSON antes de enviar
+    $json_string = json_encode($response);
+    error_log('[WC AJAX FILTER] DEBUG SAFARI - JSON length: ' . strlen($json_string));
+    error_log('[WC AJAX FILTER] DEBUG SAFARI - First 100 chars of JSON: ' . substr($json_string, 0, 100));
+    
+    // Enviar respuesta JSON limpia
+    echo $json_string;
+    wp_die(); // Asegurar que no se envíe nada más
+}
+
+
+
+
+// Shortcode for Filters
+add_shortcode('wc_ajax_filters', 'wc_ajax_filters_shortcode');
+function wc_ajax_filters_shortcode() {
+    $price_bounds = wc_ajax_filters_get_price_bounds();
+    $brand_context = wc_ajax_filters_get_brand_terms();
+    $brands = $brand_context['terms'];
+    $brand_taxonomy = $brand_context['taxonomy'];
+
+    // Obtener categorías de tipo de producto
+    $product_types = array(
+        'armazon' => __('Armazón', 'optica-vision'),
+        'lentes-de-contacto' => __('Lentes de Contacto', 'optica-vision'),
+        'lentes-de-sol' => __('Lentes de Sol', 'optica-vision')
+    );
+
+    ob_start();
+    ?>
+    <!-- Mobile filters button -->
+    <button type="button" class="wcaf-mobile-toggle" id="wcaf-mobile-toggle">
+        <?php esc_html_e('Filtros', 'optica-vision'); ?>
+    </button>
+
+    <!-- Desktop filters -->
+    <aside id="wc-ajax-filters" class="wcaf-card" data-brand-taxonomy="<?php echo esc_attr($brand_taxonomy); ?>" aria-label="<?php esc_attr_e('Filtros de productos', 'optica-vision'); ?>">
+        <header class="wcaf-card__header">
+            <h3 class="wcaf-card__title"><?php esc_html_e('Filtros', 'optica-vision'); ?></h3>
+            <button type="button" id="reset-filters" class="wcaf-card__reset" aria-label="<?php esc_attr_e('Limpiar filtros', 'optica-vision'); ?>">
+                <?php esc_html_e('Limpiar', 'optica-vision'); ?>
+            </button>
+        </header>
+
+        <!-- Filtro de Tipo de Producto -->
+        <section class="wcaf-section is-open" data-filter-section="product-types">
+            <button class="wcaf-section__toggle" type="button" aria-expanded="true">
+                <span class="wcaf-section__label"><?php esc_html_e('Tipo de Producto', 'optica-vision'); ?></span>
+                <span class="wcaf-section__icon" aria-hidden="true"></span>
+            </button>
+            <div class="wcaf-section__content">
+                <ul class="wcaf-checklist" role="list">
+                    <?php foreach ($product_types as $slug => $name) : 
+                        $term = get_term_by('slug', $slug, 'product_cat');
+                        $count = $term ? $term->count : 0;
+                    ?>
+                        <li class="wcaf-checklist__item">
+                            <label class="wcaf-checkbox">
+                                <input type="checkbox" class="wcaf-checkbox__input wcaf-filter-product-type" value="<?php echo esc_attr($slug); ?>">
+                                <span class="wcaf-checkbox__box" aria-hidden="true"></span>
+                                <span class="wcaf-checkbox__label">
+                                    <?php echo esc_html($name); ?>
+                                    <span class="wcaf-checkbox__count">(<?php echo esc_html($count); ?>)</span>
+                                </span>
+                            </label>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </section>
+
+        <?php if (!empty($brands)) : ?>
+        <section class="wcaf-section is-open" data-filter-section="brands">
+            <button class="wcaf-section__toggle" type="button" aria-expanded="true">
+                <span class="wcaf-section__label"><?php esc_html_e('Marca', 'optica-vision'); ?></span>
+                <span class="wcaf-section__icon" aria-hidden="true"></span>
+            </button>
+            <div class="wcaf-section__content">
+                <ul class="wcaf-checklist" role="list">
+                    <?php foreach ($brands as $brand) : ?>
+                        <li class="wcaf-checklist__item">
+                            <label class="wcaf-checkbox">
+                                <input type="checkbox" class="wcaf-checkbox__input wcaf-filter-brand" value="<?php echo esc_attr($brand->slug); ?>">
+                                <span class="wcaf-checkbox__box" aria-hidden="true"></span>
+                                <span class="wcaf-checkbox__label">
+                                    <?php echo esc_html($brand->name); ?>
+                                    <span class="wcaf-checkbox__count">(<?php echo esc_html($brand->count); ?>)</span>
+                                </span>
+                            </label>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <?php /* FILTRO DE PRECIO DESHABILITADO - Se implementará una versión mejorada
+        <section class="wcaf-section is-open" data-filter-section="price">
+            <button class="wcaf-section__toggle" type="button" aria-expanded="true">
+                <span class="wcaf-section__label"><?php esc_html_e('Precio', 'optica-vision'); ?></span>
+                <span class="wcaf-section__icon" aria-hidden="true"></span>
+            </button>
+            <div class="wcaf-section__content">
+                <div class="wcaf-price" data-min="<?php echo esc_attr($price_bounds['min']); ?>" data-max="<?php echo esc_attr($price_bounds['max']); ?>" data-step="<?php echo esc_attr($price_bounds['step']); ?>">
+                    <div class="wcaf-price__slider">
+                        <input type="range" class="wcaf-price__range wcaf-price__range--min" min="<?php echo esc_attr($price_bounds['min']); ?>" max="<?php echo esc_attr($price_bounds['max']); ?>" step="<?php echo esc_attr($price_bounds['step']); ?>" value="<?php echo esc_attr($price_bounds['min']); ?>" aria-label="<?php esc_attr_e('Precio mínimo', 'optica-vision'); ?>">
+                        <input type="range" class="wcaf-price__range wcaf-price__range--max" min="<?php echo esc_attr($price_bounds['min']); ?>" max="<?php echo esc_attr($price_bounds['max']); ?>" step="<?php echo esc_attr($price_bounds['step']); ?>" value="<?php echo esc_attr($price_bounds['max']); ?>" aria-label="<?php esc_attr_e('Precio máximo', 'optica-vision'); ?>">
+                        <div class="wcaf-price__track" aria-hidden="true"></div>
+                    </div>
+                    <div class="wcaf-price__inputs" role="group" aria-label="<?php esc_attr_e('Rango de precio', 'optica-vision'); ?>">
+                        <div class="wcaf-price__input" data-input="min">
+                            <span class="wcaf-price__currency"><?php echo esc_html(get_woocommerce_currency_symbol('PYG')); ?></span>
+                            <input type="number" id="wcaf-min-price" min="<?php echo esc_attr($price_bounds['min']); ?>" max="<?php echo esc_attr($price_bounds['max']); ?>" step="<?php echo esc_attr($price_bounds['step']); ?>" value="<?php echo esc_attr($price_bounds['min']); ?>">
+                        </div>
+                        <span class="wcaf-price__divider" aria-hidden="true">-</span>
+                        <div class="wcaf-price__input" data-input="max">
+                            <span class="wcaf-price__currency"><?php echo esc_html(get_woocommerce_currency_symbol('PYG')); ?></span>
+                            <input type="number" id="wcaf-max-price" min="<?php echo esc_attr($price_bounds['min']); ?>" max="<?php echo esc_attr($price_bounds['max']); ?>" step="<?php echo esc_attr($price_bounds['step']); ?>" value="<?php echo esc_attr($price_bounds['max']); ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        */ ?>
+    </aside>
+
+    <!-- Mobile modal -->
+    <div class="wcaf-modal-overlay" id="wcaf-modal-overlay">
+        <div class="wcaf-modal">
+            <div class="wcaf-modal-header">
+                <h3 class="wcaf-modal-title"><?php esc_html_e('Filtros', 'optica-vision'); ?></h3>
+                <button type="button" class="wcaf-modal-close" id="wcaf-modal-close">&times;</button>
+            </div>
+            <div class="wcaf-modal-content" id="wcaf-modal-content">
+                <!-- Content will be cloned from desktop filters -->
+            </div>
+            <div class="wcaf-modal-footer">
+                <button type="button" class="wcaf-apply-filters" id="wcaf-apply-filters">
+                    <?php esc_html_e('Aplicar Filtros', 'optica-vision'); ?>
+                </button>
+                <button type="button" class="wcaf-clear-filters" id="wcaf-clear-filters">
+                    <?php esc_html_e('Limpiar', 'optica-vision'); ?>
+                </button>
+            </div>
+        </div>
+    </div>
+    <?php
+
+    return ob_get_clean();
+}
+
+
+// Shortcode for Filtered Products
+add_shortcode('wc_ajax_filtered_products', 'wc_ajax_filtered_products_shortcode');
+function wc_ajax_filtered_products_shortcode() {
+    ob_start();
+
+    // Get the current queried object to detect category context
+    $queried_object = get_queried_object();
+    $is_category_page = isset($queried_object->taxonomy) && $queried_object->taxonomy === 'product_cat';
+    $is_search_page = is_search();
+    $search_query = get_search_query();
+    
+    // DEBUG: Log del contexto
+    error_log('[WC AJAX FILTERS] Shortcode ejecutándose');
+    error_log('[WC AJAX FILTERS] Shortcode - is_search(): ' . ($is_search_page ? 'YES' : 'NO'));
+    error_log('[WC AJAX FILTERS] Shortcode - get_search_query(): "' . $search_query . '"');
+    
+    // Verificar si estamos en una página de marca (subcategoría de "marcas")
+    $is_brand_page = false;
+    if ($is_category_page) {
+        $marcas_parent = get_term_by('slug', 'marcas', 'product_cat');
+        if ($marcas_parent && $queried_object->parent == $marcas_parent->term_id) {
+            $is_brand_page = true;
+        }
+    }
+
+    // Determine base query arguments
+    $args = [
+        'post_type' => 'product',
+        'posts_per_page' => 24,
+        'paged' => (get_query_var('paged')) ? get_query_var('paged') : 1,
+    ];
+    
+    // Si estamos en una búsqueda, agregar el término de búsqueda
+    if ($is_search_page && !empty($search_query)) {
+        $args['s'] = $search_query;
+        error_log('[WC AJAX FILTERS] Shortcode - Búsqueda detectada: ' . $search_query);
+    } else {
+        error_log('[WC AJAX FILTERS] Shortcode - NO es búsqueda o search_query vacío');
+    }
+
+    // CAMBIO CRÍTICO: En páginas de marca, NO aplicar NINGÚN filtro de categoría
+    // Esto permite cargar TODOS los productos y que el usuario pueda filtrar por cualquier marca
+    // El filtro de la marca actual se aplicará automáticamente por JavaScript
+    // Para otras páginas de categoría (no marcas), mantener el comportamiento original
+    if ($is_category_page && !$is_brand_page) {
+        $args['tax_query'][] = [
+            'taxonomy' => 'product_cat',
+            'field' => 'slug',
+            'terms' => $queried_object->slug,
+        ];
+    }
+    
+    // Logging para debug
+    error_log('[WC AJAX FILTERS] Shortcode - Es página de categoría: ' . ($is_category_page ? 'SÍ' : 'NO'));
+    error_log('[WC AJAX FILTERS] Shortcode - Es página de marca: ' . ($is_brand_page ? 'SÍ' : 'NO'));
+    if ($is_brand_page) {
+        error_log('[WC AJAX FILTERS] Shortcode - Marca detectada: ' . $queried_object->slug);
+    }
+
+    // Query products
+    $query = new WP_Query($args);
+
+    // Si es página de marca, agregar data attribute ANTES del contenedor para que JavaScript lo detecte
+    if ($is_brand_page) {
+        echo '<div class="opticavision-brand-page" data-brand-slug="' . esc_attr($queried_object->slug) . '" data-brand-name="' . esc_attr($queried_object->name) . '" style="display:none;"></div>';
+    }
+
+    echo '<div id="wc-ajax-product-list">';
+    echo '<div class="products_ajax columns-4">';
+
+    if ($query->have_posts()) {
+        while ($query->have_posts()) {
+            $query->the_post();
+            wc_get_template_part('content', 'product');
+        }
+    } else {
+        echo '<p>No hay productos para mostrar en esta categoría.</p>';
+    }
+
+    echo '</div>';
+
+    // Pagination con fallback server-side y SEO (shortcode inicial)
+    $total_pages = $query->max_num_pages;
+    $current_page = (get_query_var('paged')) ? get_query_var('paged') : 1;
+    if ($total_pages > 1) {
+        echo '<nav class="woocommerce-pagination" aria-label="Paginación de productos">';
+        
+        // Generar URL base para fallback
+        $base_url = home_url($_SERVER['REQUEST_URI']);
+        $base_url = remove_query_arg('paged', $base_url);
+        $base_url = preg_replace('/\/page\/\d+\//', '/', $base_url);
+        
+        for ($i = 1; $i <= $total_pages; $i++) {
+            $class = ($i === $current_page) ? 'page-numbers current' : 'page-numbers';
+            
+            // Generar href válido para fallback server-side (sin JS)
+            if ($i == 1) {
+                $href = $base_url;
+            } else {
+                $href = add_query_arg('paged', $i, $base_url);
+            }
+            
+            // Atributos SEO: rel="prev/next"
+            $rel = '';
+            if ($i == $current_page - 1) {
+                $rel = ' rel="prev"';
+            } elseif ($i == $current_page + 1) {
+                $rel = ' rel="next"';
+            }
+            
+            // Aria-label para accesibilidad
+            $aria_label = ($i === $current_page) ? ' aria-label="Página ' . $i . ', actual" aria-current="page"' : ' aria-label="Ir a página ' . $i . '"';
+            
+            echo '<a class="' . esc_attr($class) . '" href="' . esc_url($href) . '" data-page="' . absint($i) . '"' . $rel . $aria_label . '>' . absint($i) . '</a>';
+        }
+        echo '</nav>';
+    }
+
+    wp_reset_postdata();
+    echo '</div>';
+
+    return ob_get_clean();
+}
+
+// SKU search removed from plugin - now handled in theme for search pages only

@@ -1,0 +1,42 @@
+# Ignore everything by default
+*
+
+# But track these directories
+!.gitignore
+!AGENTS.md
+!wp-content/
+!wp-content/plugins/
+!wp-content/themes/
+
+# ===== Custom Plugins =====
+!wp-content/plugins/optica-vision-api-sync/
+!wp-content/plugins/optica-vision-api-sync/**
+!wp-content/plugins/optica-vision-contact-lenses-sync/
+!wp-content/plugins/optica-vision-contact-lenses-sync/**
+!wp-content/plugins/optica-vision-fallback/
+!wp-content/plugins/optica-vision-fallback/**
+!wp-content/plugins/optica-vision-image-matcher/
+!wp-content/plugins/optica-vision-image-matcher/**
+!wp-content/plugins/optica-vision-stock-control/
+!wp-content/plugins/optica-vision-stock-control/**
+!wp-content/plugins/opticavision-recaptcha/
+!wp-content/plugins/opticavision-recaptcha/**
+!wp-content/plugins/opticavision-recaptcha-/
+!wp-content/plugins/opticavision-recaptcha-/**
+!wp-content/plugins/woo-ajax-filters/
+!wp-content/plugins/woo-ajax-filters/**
+!wp-content/plugins/woocommerce-bancard-gateway/
+!wp-content/plugins/woocommerce-bancard-gateway/**
+!wp-content/plugins/optica-debug/
+!wp-content/plugins/optica-debug/**
+
+# ===== Custom Theme =====
+!wp-content/themes/opticavision-theme/
+!wp-content/themes/opticavision-theme/**
+
+# ===== Always ignore =====
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+.env

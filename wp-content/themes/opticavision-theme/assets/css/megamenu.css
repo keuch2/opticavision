@@ -1,0 +1,427 @@
+/**
+ * OpticaVision Megamenu Styles
+ * Estilos para el sistema de megamenús
+ */
+
+/* ==========================================================================
+   MEGAMENU BASE STYLES
+   ========================================================================== */
+
+.main-navigation {
+    position: relative;
+}
+
+.main-navigation .menu {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.main-navigation .menu-item {
+    position: relative;
+}
+
+.main-navigation .menu-item > a {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    text-decoration: none;
+    color: #333;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.main-navigation .menu-item:hover > a {
+    color: var(--primary-color);
+    background-color: rgba(26, 43, 136, 0.05);
+}
+
+/* Dropdown Icons */
+.dropdown-icon {
+    margin-left: 8px;
+    font-size: 12px;
+    transition: transform 0.3s ease;
+}
+
+.menu-item:hover .dropdown-icon {
+    transform: rotate(180deg);
+}
+
+/* ==========================================================================
+   MEGAMENU DROPDOWN
+   ========================================================================== */
+
+.megamenu-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    min-width: 600px;
+}
+
+.has-megamenu:hover .megamenu-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.megamenu-container {
+    display: grid;
+    gap: 0;
+    padding: 10px;
+    max-width: 1200px;
+}
+
+/* Configuración de columnas */
+.megamenu-columns-2 .megamenu-container {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.megamenu-columns-3 .megamenu-container {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.megamenu-columns-4 .megamenu-container {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.megamenu-columns-5 .megamenu-container {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+.megamenu-columns-6 .megamenu-container {
+    grid-template-columns: repeat(6, 1fr);
+}
+
+/* Ancho del megamenú */
+.megamenu-width-auto .megamenu-dropdown {
+    width: auto;
+}
+
+.megamenu-width-container .megamenu-dropdown {
+    width: 100%;
+    max-width: 1200px;
+}
+
+.megamenu-width-full .megamenu-dropdown {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100vw;
+    max-width: none;
+}
+
+.megamenu-width-full:hover .megamenu-dropdown {
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ==========================================================================
+   MEGAMENU COLUMNS
+   ========================================================================== */
+
+.megamenu-column {
+    padding: 0 10px;
+    border-right: 1px solid #f0f0f0;
+}
+
+.megamenu-column:last-child {
+    border-right: none;
+}
+
+.megamenu-column-header {
+    margin-bottom: 20px;
+}
+
+.megamenu-column-header > a {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #333;
+    text-decoration: none;
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    transition: color 0.3s ease;
+}
+
+.megamenu-column-header > a:hover {
+    color: var(--primary-color);
+}
+
+/* Imagen en el header de columna */
+.megamenu-column-header .menu-item-image {
+    width: 100%;
+    max-width: 150px;
+    height: auto;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+/* Descripción en el header */
+.megamenu-column-header .menu-item-description {
+    font-size: 14px;
+    color: #666;
+    line-height: 1.4;
+    margin-bottom: 15px;
+}
+
+/* ==========================================================================
+   SUBMENU ITEMS
+   ========================================================================== */
+
+.megamenu-column .sub-menu {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.megamenu-column .sub-menu li {
+    margin-bottom: 8px;
+}
+
+.megamenu-column .sub-menu a {
+    display: block;
+    padding: 8px 0;
+    color: #666;
+    text-decoration: none;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    border-bottom: 1px solid transparent;
+}
+
+.megamenu-column .sub-menu a:hover {
+    color: var(--primary-color);
+    padding-left: 10px;
+    border-bottom-color: var(--primary-color);
+}
+
+/* Iconos en submenu items */
+.megamenu-column .sub-menu .menu-item-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+/* ==========================================================================
+   DROPDOWN NORMAL (NO MEGAMENU)
+   ========================================================================== */
+
+.has-dropdown:not(.has-megamenu) .sub-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    min-width: 200px;
+    list-style: none;
+    margin: 0;
+    padding: 10px 0;
+}
+
+.has-dropdown:not(.has-megamenu):hover .sub-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.has-dropdown:not(.has-megamenu) .sub-menu li {
+    margin: 0;
+}
+
+.has-dropdown:not(.has-megamenu) .sub-menu a {
+    display: block;
+    padding: 10px 20px;
+    color: #666;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.has-dropdown:not(.has-megamenu) .sub-menu a:hover {
+    color: var(--primary-color);
+    background-color: rgba(26, 43, 136, 0.05);
+}
+
+/* ==========================================================================
+   MOBILE STYLES
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+    .megamenu-dropdown {
+        position: static;
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+        box-shadow: none;
+        border: none;
+        border-radius: 0;
+        min-width: auto;
+        width: 100%;
+    }
+
+    .megamenu-container {
+        grid-template-columns: 1fr;
+        padding: 20px;
+        gap: 20px;
+    }
+
+    .megamenu-column {
+        padding: 0;
+        border-right: none;
+        border-bottom: 1px solid #f0f0f0;
+        padding-bottom: 20px;
+        margin-bottom: 20px;
+    }
+
+    .megamenu-column:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+
+    .has-megamenu .megamenu-dropdown {
+        display: none;
+    }
+
+    .has-megamenu.menu-item-expanded .megamenu-dropdown {
+        display: block;
+    }
+}
+
+@media (max-width: 768px) {
+    .main-navigation .menu {
+        flex-direction: column;
+    }
+
+    .main-navigation .menu-item {
+        width: 100%;
+    }
+
+    .main-navigation .menu-item > a {
+        justify-content: space-between;
+        padding: 15px 20px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .megamenu-container {
+        padding: 15px;
+    }
+
+    .megamenu-column-header > a {
+        font-size: 14px;
+    }
+
+    .megamenu-column .sub-menu a {
+        font-size: 13px;
+        padding: 6px 0;
+    }
+}
+
+/* ==========================================================================
+   ACCESSIBILITY
+   ========================================================================== */
+
+.main-navigation .menu-item a:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.megamenu-dropdown:focus-within {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+/* Screen reader text */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ==========================================================================
+   ANIMATIONS
+   ========================================================================== */
+
+@keyframes megamenuFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.megamenu-dropdown {
+    animation: megamenuFadeIn 0.3s ease-out;
+}
+
+/* Hover delay para evitar activación accidental */
+.has-megamenu {
+    transition-delay: 0.1s;
+}
+
+.has-megamenu:hover {
+    transition-delay: 0s;
+}
+
+/* ==========================================================================
+   THEME INTEGRATION
+   ========================================================================== */
+
+/* Integración con colores del theme */
+.megamenu-column-header > a {
+    border-bottom-color: var(--primary-color, #1a2b88);
+}
+
+.megamenu-column .sub-menu a:hover {
+    color: var(--primary-color, #1a2b88);
+    border-bottom-color: var(--primary-color, #1a2b88);
+}
+
+.main-navigation .menu-item:hover > a {
+    color: var(--primary-color, #1a2b88);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .megamenu-dropdown {
+        background: #2a2a2a;
+        border-color: #444;
+        color: #fff;
+    }
+
+    .megamenu-column-header > a {
+        color: #fff;
+    }
+
+    .megamenu-column .sub-menu a {
+        color: #ccc;
+    }
+
+    .megamenu-column .sub-menu a:hover {
+        color: var(--primary-color, #4a9eff);
+    }
+}

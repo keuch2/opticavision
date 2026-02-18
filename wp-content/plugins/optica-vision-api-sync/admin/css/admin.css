@@ -1,0 +1,244 @@
+/* Admin Styles */
+:root {
+    --primary-color: #2271b1;
+    --primary-hover: #135e96;
+    --danger-color: #dc3232;
+    --danger-hover: #aa2424;
+    --success-color: #00a32a;
+    --warning-color: #dba617;
+    --border-color: #c3c4c7;
+    --light-bg: #f6f7f7;
+    --white: #ffffff;
+    --text-color: #1d2327;
+    --text-muted: #646970;
+}
+
+.wrap {
+    max-width: 1200px;
+    margin: 20px auto;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+}
+
+/* Header */
+.optica-header {
+    background: var(--white);
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.optica-header h1 {
+    margin: 0;
+    color: var(--text-color);
+}
+
+/* Tabs */
+.nav-tab-wrapper {
+    margin: 20px 0 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.nav-tab {
+    background: var(--light-bg);
+    border: 1px solid var(--border-color);
+    border-bottom: none;
+    margin-right: 5px;
+    padding: 8px 15px;
+    text-decoration: none;
+    color: var(--text-color);
+    border-radius: 4px 4px 0 0;
+    transition: all 0.2s ease;
+}
+
+.nav-tab-active {
+    background: var(--white);
+    border-bottom: 1px solid var(--white);
+    margin-bottom: -1px;
+    color: var(--primary-color);
+}
+
+.nav-tab:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+    background: var(--white);
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Cards */
+.optica-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.optica-card {
+    background: var(--white);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.optica-card h3 {
+    margin-top: 0;
+    color: var(--text-color);
+    font-size: 16px;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+}
+
+.optica-stat {
+    font-size: 28px;
+    font-weight: 600;
+    margin: 10px 0;
+    color: var(--primary-color);
+}
+
+.optica-stat-label {
+    color: var(--text-muted);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Buttons */
+.button-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.button-primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+}
+
+.button-danger {
+    background-color: var(--danger-color);
+    border-color: var(--danger-color);
+    color: var(--white);
+}
+
+.button-danger:hover {
+    background-color: var(--danger-hover);
+    border-color: var(--danger-hover);
+}
+
+/* Tables */
+.optica-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+.optica-table th,
+.optica-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.optica-table th {
+    background: var(--light-bg);
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.optica-table tr:hover {
+    background: #f9f9f9;
+}
+
+/* Status */
+.status-connected {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.status-disconnected {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
+/* Progress Bar */
+.progress-container {
+    margin: 15px 0;
+    background: var(--light-bg);
+    border-radius: 4px;
+    height: 10px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background: var(--primary-color);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+/* Logs */
+.optica-logs {
+    background: #1e1e1e;
+    color: #e0e0e0;
+    padding: 15px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.log-entry {
+    margin: 5px 0;
+    padding: 3px 0;
+    border-bottom: 1px solid #333;
+}
+
+.log-time {
+    color: #9e9e9e;
+    margin-right: 10px;
+}
+
+.log-message {
+    color: #e0e0e0;
+}
+
+/* Responsive */
+@media (max-width: 782px) {
+    .optica-cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .optica-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
+
+/* Animations */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.spinner {
+    animation: spin 1s linear infinite;
+    display: inline-block;
+    margin-right: 5px;
+    vertical-align: middle;
+}

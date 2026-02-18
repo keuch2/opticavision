@@ -1,0 +1,653 @@
+jQuery(document).ready(function ($) {
+    console.log('[WC AJAX FILTERS] Plugin inicializando...');
+    
+    var state = {
+        minPrice: parseFloat(wcAjaxFilters.min_price) || 0,
+        maxPrice: parseFloat(wcAjaxFilters.max_price) || 0,
+        brands: [],
+        productTypes: [], // Nuevo: tipos de producto (armazón, lentes de contacto, lentes de sol)
+    };
+
+    var defaults = {
+        minPrice: state.minPrice,
+        maxPrice: state.maxPrice,
+    };
+
+    var currentPage = 1;
+    var totalPages = 0;
+    var $productList = $('#wc-ajax-product-list');
+    var loaderTemplate = '<div id="ajax-loader" style="display:none;"><img src="' + wcAjaxFilters.loader_url + '" alt="Loading"></div>';
+
+    function ensureLoader() {
+        if (!$productList.find('#ajax-loader').length) {
+            $productList.append(loaderTemplate);
+        }
+    }
+
+    ensureLoader();
+
+    var $filtersCard = $('#wc-ajax-filters');
+    console.log('[WC AJAX FILTERS] Elemento #wc-ajax-filters encontrado:', $filtersCard.length > 0);
+    
+    // Variables con valores por defecto (en caso de no haber filtros)
+    var brandTaxonomy = '';
+    var $brandInputs = $();
+    var $productTypeInputs = $(); // Nuevo: inputs de tipo de producto
+    var $priceContainer = $();
+    var sliderMin = state.minPrice;
+    var sliderMax = state.maxPrice;
+    var sliderStep = 1000;
+    var $rangeMin = $();
+    var $rangeMax = $();
+    var $inputMin = $();
+    var $inputMax = $();
+    
+    // Si hay filtros, inicializar variables correctamente
+    if ($filtersCard.length) {
+        brandTaxonomy = $filtersCard.data('brand-taxonomy') || '';
+        $brandInputs = $filtersCard.find('.wcaf-filter-brand');
+        $productTypeInputs = $filtersCard.find('.wcaf-filter-product-type'); // Nuevo
+        $priceContainer = $filtersCard.find('.wcaf-price');
+        sliderMin = parseFloat($priceContainer.data('min')) || state.minPrice;
+        sliderMax = parseFloat($priceContainer.data('max')) || state.maxPrice;
+        sliderStep = parseFloat($priceContainer.data('step')) || 1000;
+        $rangeMin = $priceContainer.find('.wcaf-price__range--min');
+        $rangeMax = $priceContainer.find('.wcaf-price__range--max');
+        $inputMin = $('#wcaf-min-price');
+        $inputMax = $('#wcaf-max-price');
+    } else if (!$productList.length) {
+        // Si no hay filtros NI productos, salir
+        console.log('[WC AJAX FILTERS] No hay filtros ni productos - saliendo');
+        return;
+    } else {
+        // Si no hay filtros pero SÍ hay productos, continuar solo con paginación
+        console.log('[WC AJAX FILTERS] No hay filtros pero SÍ hay productos - inicializando solo paginación');
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
+    function updatePriceTrack() {
+        // Validar que el contenedor de precios existe antes de intentar actualizar
+        if (!$priceContainer.length || !$priceContainer.get(0)) {
+            return; // Salir silenciosamente si no hay filtro de precios
+        }
+        
+        var min = state.minPrice;
+        var max = state.maxPrice;
+        var range = sliderMax - sliderMin;
+
+        if (range <= 0) {
+            range = 1;
+        }
+
+        var minPercent = ((min - sliderMin) / range) * 100;
+        var maxPercent = ((max - sliderMin) / range) * 100;
+
+        minPercent = clamp(minPercent, 0, 100);
+        maxPercent = clamp(maxPercent, 0, 100);
+
+        $priceContainer.get(0).style.setProperty('--wcaf-min', minPercent + '%');
+        $priceContainer.get(0).style.setProperty('--wcaf-max', maxPercent + '%');
+    }
+
+    function syncInputsFromState(options) {
+        options = options || {};
+        if (!options.skipInputs) {
+            $inputMin.val(state.minPrice);
+            $inputMax.val(state.maxPrice);
+        }
+
+        if (!options.skipSlider) {
+            $rangeMin.val(state.minPrice);
+            $rangeMax.val(state.maxPrice);
+            updatePriceTrack();
+        }
+    }
+
+    function collectBrandSelection() {
+        state.brands = $brandInputs.filter(':checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+    
+    function collectProductTypeSelection() {
+        state.productTypes = $productTypeInputs.filter(':checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function setPriceState(min, max, options) {
+        options = options || {};
+
+        min = clamp(parseFloat(min), sliderMin, sliderMax);
+        max = clamp(parseFloat(max), sliderMin, sliderMax);
+
+        if (min > max) {
+            if (options.handle === 'min') {
+                min = max;
+            } else if (options.handle === 'max') {
+                max = min;
+            } else {
+                var midpoint = (min + max) / 2;
+                min = midpoint;
+                max = midpoint;
+            }
+        }
+
+        state.minPrice = Math.round(min / sliderStep) * sliderStep;
+        state.maxPrice = Math.round(max / sliderStep) * sliderStep;
+
+        state.minPrice = clamp(state.minPrice, sliderMin, sliderMax);
+        state.maxPrice = clamp(state.maxPrice, sliderMin, sliderMax);
+
+        if (state.minPrice > state.maxPrice) {
+            state.maxPrice = state.minPrice;
+        }
+
+        syncInputsFromState(options);
+    }
+
+    $brandInputs.on('change', function () {
+        collectBrandSelection();
+        loadProducts(1);
+    });
+    
+    $productTypeInputs.on('change', function () {
+        collectProductTypeSelection();
+        loadProducts(1);
+    });
+
+    $filtersCard.on('click', '.wcaf-section__toggle', function (event) {
+        event.preventDefault();
+        var $section = $(this).closest('.wcaf-section');
+        var isOpen = $section.hasClass('is-open');
+        $section.toggleClass('is-open', !isOpen);
+        $(this).attr('aria-expanded', !isOpen);
+    });
+
+    $rangeMin.on('input', function () {
+        var value = parseFloat(this.value);
+        var maxValue = parseFloat($rangeMax.val());
+        if (value > maxValue) {
+            value = maxValue;
+        }
+        setPriceState(value, maxValue, { handle: 'min', apply: false, skipInputs: true });
+    });
+
+    $rangeMax.on('input', function () {
+        var value = parseFloat(this.value);
+        var minValue = parseFloat($rangeMin.val());
+        if (value < minValue) {
+            value = minValue;
+        }
+        setPriceState(minValue, value, { handle: 'max', apply: false, skipInputs: true });
+    });
+
+    $rangeMin.on('change', function () {
+        setPriceState(this.value, $rangeMax.val(), { handle: 'min' });
+        loadProducts(1);
+    });
+
+    $rangeMax.on('change', function () {
+        setPriceState($rangeMin.val(), this.value, { handle: 'max' });
+        loadProducts(1);
+    });
+
+    $inputMin.on('input', function () {
+        var value = parseFloat(this.value);
+        setPriceState(value, $inputMax.val(), { skipSlider: true });
+        updatePriceTrack();
+    });
+
+    $inputMax.on('input', function () {
+        var value = parseFloat(this.value);
+        setPriceState($inputMin.val(), value, { skipSlider: true });
+        updatePriceTrack();
+    });
+
+    $inputMin.on('change', function () {
+        setPriceState(this.value, $inputMax.val());
+        loadProducts(1);
+    });
+
+    $inputMax.on('change', function () {
+        setPriceState($inputMin.val(), this.value);
+        loadProducts(1);
+    });
+
+    $('#reset-filters').on('click', function () {
+        state.minPrice = defaults.minPrice;
+        state.maxPrice = defaults.maxPrice;
+        state.brands = [];
+        state.productTypes = [];
+        $brandInputs.prop('checked', false);
+        $productTypeInputs.prop('checked', false);
+        syncInputsFromState();
+        loadProducts(1);
+    });
+
+    function addPaginationArrows() {
+        var $pagination = $('.woocommerce-pagination');
+        if (!$pagination.length) {
+            totalPages = 0;
+            return;
+        }
+
+        if ($pagination.find('.pagination-prev, .pagination-next').length) {
+            totalPages = $pagination.find('.page-numbers').not('.pagination-prev, .pagination-next').length;
+            return;
+        }
+
+        totalPages = $pagination.find('.page-numbers').not('.pagination-prev, .pagination-next').length;
+
+        if (totalPages <= 1) {
+            return;
+        }
+
+        $('<a class="pagination-prev page-numbers" href="#" aria-label="Anterior"><i class="fa fa-chevron-left" aria-hidden="true"></i></a>').prependTo($pagination);
+        $('<a class="pagination-next page-numbers" href="#" aria-label="Siguiente"><i class="fa fa-chevron-right" aria-hidden="true"></i></a>').appendTo($pagination);
+    }
+
+    // FIX iOS Safari: Usar delegación con closest() para manejar clicks en elementos hijos (ej: <i> dentro de <a>)
+    $(document).on('click', '.woocommerce-pagination .page-numbers:not(.pagination-prev):not(.pagination-next):not(.dots)', function (event) {
+        // iOS Safari: event.target puede ser el <i> hijo, no el <a> padre
+        var $link = $(event.target).closest('a.page-numbers');
+        
+        // Validar que efectivamente clickeamos un enlace válido
+        if (!$link.length || $link.hasClass('current')) {
+            console.log('[WC AJAX FILTERS] Click ignorado: no es enlace válido o es página actual');
+            return; // Permitir comportamiento default si no es válido
+        }
+        
+        // Intentar obtener el número de página de múltiples fuentes
+        var page = parseInt($link.data('page'));
+        
+        // Si no tiene data-page, intentar extraer del texto del link
+        if (!page || isNaN(page)) {
+            page = parseInt($link.text().trim());
+            console.log('[WC AJAX FILTERS] DEBUG iOS - Page from text:', page);
+        }
+        
+        // Si tampoco funciona, intentar extraer del href (ej: /page/2/ o ?paged=2)
+        if (!page || isNaN(page)) {
+            var href = $link.attr('href') || '';
+            console.log('[WC AJAX FILTERS] DEBUG iOS - Trying href:', href);
+            // Intentar formato /page/N/
+            var match = href.match(/\/page\/(\d+)\//);            if (match) {
+                page = parseInt(match[1]);
+            } else {
+                // Intentar formato ?paged=N
+                match = href.match(/[?&]paged=(\d+)/);
+                if (match) {
+                    page = parseInt(match[1]);
+                }
+            }
+        }
+        
+        // Si se encontró un número de página válido, prevenir default y cargar por AJAX
+        if (page && page > 0) {
+            event.preventDefault(); // Solo prevenir si vamos a manejar el AJAX
+            console.log('[WC AJAX FILTERS] Navegando a página:', page);
+            currentPage = page;
+            loadProducts(currentPage);
+        } else {
+            // Fallback: permitir navegación normal si no podemos determinar la página
+            console.warn('[WC AJAX FILTERS] No se pudo determinar página - usando navegación estándar');
+            console.warn('[WC AJAX FILTERS] Link data:', {
+                'data-page': $link.data('page'),
+                'text': $link.text(),
+                'href': $link.attr('href'),
+                'target': event.target.tagName
+            });
+            // NO llamar preventDefault() - permitir navegación normal como fallback
+        }
+    });
+
+    // FIX iOS Safari: Prev button con closest() y fallback
+    $(document).on('click', '.pagination-prev', function (event) {
+        var $link = $(event.target).closest('a.pagination-prev');
+        
+        if (!$link.length) {
+            console.log('[WC AJAX FILTERS] Prev click ignorado: no es enlace válido');
+            return;
+        }
+        
+        if (currentPage > 1) {
+            event.preventDefault(); // Solo prevenir si vamos a navegar
+            console.log('[WC AJAX FILTERS] Navegando a página anterior:', currentPage - 1);
+            loadProducts(currentPage - 1);
+        } else {
+            // Ya estamos en página 1, prevenir default de todas formas
+            event.preventDefault();
+            console.log('[WC AJAX FILTERS] Ya en primera página');
+        }
+    });
+
+    // FIX iOS Safari: Next button con closest() y fallback
+    $(document).on('click', '.pagination-next', function (event) {
+        var $link = $(event.target).closest('a.pagination-next');
+        
+        if (!$link.length) {
+            console.log('[WC AJAX FILTERS] Next click ignorado: no es enlace válido');
+            return;
+        }
+        
+        if (currentPage < totalPages) {
+            event.preventDefault(); // Solo prevenir si vamos a navegar
+            console.log('[WC AJAX FILTERS] Navegando a página siguiente:', currentPage + 1);
+            loadProducts(currentPage + 1);
+        } else {
+            // Ya estamos en última página, prevenir default de todas formas
+            event.preventDefault();
+            console.log('[WC AJAX FILTERS] Ya en última página');
+        }
+    });
+
+    function loadProducts(page) {
+        ensureLoader();
+        currentPage = page;
+        var $loader = $productList.find('#ajax-loader');
+        $loader.show();
+
+        // Obtener category slug - priorizar data attribute que debería venir del template
+        console.log('[WC AJAX FILTERS] DEBUG - Iniciando detección de category slug');
+        console.log('[WC AJAX FILTERS] DEBUG - Body data-category-slug:', $('body').data('category-slug'));
+        console.log('[WC AJAX FILTERS] DEBUG - Body tiene tax-product_cat:', $('body').hasClass('tax-product_cat'));
+        console.log('[WC AJAX FILTERS] DEBUG - Body classes:', $('body').attr('class'));
+        console.log('[WC AJAX FILTERS] DEBUG - URL pathname:', window.location.pathname);
+        
+        var categorySlug = $('body').data('category-slug') || '';
+        
+        // Si no hay data-category-slug, intentar extraer de la URL o clases
+        // Verificar si es una página de categoría (tax-product_cat o product-category)
+        var isProductCategory = $('body').hasClass('tax-product_cat') || $('body').hasClass('product-category');
+        console.log('[WC AJAX FILTERS] DEBUG - Es página de categoría:', isProductCategory);
+        
+        if (!categorySlug && isProductCategory) {
+            // Método 1: Intentar extraer del term-{slug} en las clases
+            var termMatch = $('body').attr('class').match(/term-([\w-]+)/);
+            console.log('[WC AJAX FILTERS] DEBUG - Term match from classes:', termMatch);
+            
+            if (termMatch && termMatch[1] && !termMatch[1].match(/^\d+$/)) {
+                // Si no es solo números (que sería el term ID), usarlo
+                categorySlug = termMatch[1];
+                console.log('[WC AJAX FILTERS] DEBUG - Slug extraído de term class:', categorySlug);
+            } else {
+                // Método 2: Extraer de la URL (más confiable para subcategorías)
+                var urlPath = window.location.pathname;
+                console.log('[WC AJAX FILTERS] DEBUG - Intentando extraer de URL:', urlPath);
+                
+                var categoryMatch = urlPath.match(/product-category\/(?:[\w-]+\/)*([\w-]+)\/?$/);
+                console.log('[WC AJAX FILTERS] DEBUG - Regex match result:', categoryMatch);
+                
+                if (categoryMatch) {
+                    categorySlug = categoryMatch[1];
+                    console.log('[WC AJAX FILTERS] DEBUG - Slug extraído de URL:', categorySlug);
+                }
+            }
+        }
+        
+        console.log('[WC AJAX FILTERS] Category slug FINAL detectado:', categorySlug);
+
+        // FIX BÚSQUEDA: Buscar search_query en múltiples lugares
+        var searchQuery = '';
+        
+        // Prioridad 1: Buscar en el contenedor de búsqueda (ya está en el HTML)
+        if ($('.opticavision-search-content').length) {
+            searchQuery = $('.opticavision-search-content').data('search-query') || '';
+            console.log('[WC AJAX FILTERS] Search query desde .opticavision-search-content:', searchQuery);
+        }
+        
+        // Prioridad 2: Buscar en body (si fue asignado por script)
+        if (!searchQuery) {
+            searchQuery = $('body').data('search-query') || '';
+            console.log('[WC AJAX FILTERS] Search query desde body:', searchQuery);
+        }
+        
+        // Prioridad 3: Extraer del URL ?s= (último recurso)
+        if (!searchQuery) {
+            var urlParams = new URLSearchParams(window.location.search);
+            searchQuery = urlParams.get('s') || '';
+            console.log('[WC AJAX FILTERS] Search query desde URL:', searchQuery);
+        }
+        
+        console.log('[WC AJAX FILTERS] Search query FINAL:', searchQuery);
+
+        // IMPORTANTE: NO enviar category_slug si hay filtros de marca activos
+        // Esto permite que las páginas de marca funcionen exactamente como /shop/
+        var hasBrandFilters = state.brands && state.brands.length > 0;
+        var finalCategorySlug = hasBrandFilters ? '' : categorySlug;
+        
+        console.log('[WC AJAX FILTERS] DEBUG - Tiene filtros de marca:', hasBrandFilters);
+        console.log('[WC AJAX FILTERS] DEBUG - Category slug original:', categorySlug);
+        console.log('[WC AJAX FILTERS] DEBUG - Category slug FINAL (enviado):', finalCategorySlug);
+
+        // FIX SAFARI: Usar $.ajax con traditional:true para serializar arrays correctamente
+        // Safari tiene un bug con $.post() que no serializa arrays como PHP espera
+        var payload = {
+            action: 'wc_ajax_filter',
+            paged: page,
+            min_price: state.minPrice,
+            max_price: state.maxPrice,
+            brands: state.brands,  // Array
+            brand_taxonomy: brandTaxonomy,
+            category_slug: finalCategorySlug,  // Vacío si hay filtros de marca
+            categories: $('.filter-category:checked').map(function () {
+                return $(this).val();
+            }).get(),  // Array
+            product_types: state.productTypes,  // Nuevo: Array de tipos de producto
+            search_query: searchQuery,
+        };
+
+        // ⭐ USAR SIEMPRE el endpoint custom (admin-ajax.php tiene problemas de permisos)
+        var ajaxUrl = wcAjaxFilters.ajax_url_safari; // Usar siempre ajax-endpoint.php
+        
+        console.log('[WC AJAX FILTERS] DEBUG - Browser:', navigator.userAgent);
+        console.log('[WC AJAX FILTERS] DEBUG - Using URL:', ajaxUrl);
+        console.log('[WC AJAX FILTERS] SAFARI DEBUG - Payload antes de enviar:', payload);
+        console.log('[WC AJAX FILTERS] SAFARI DEBUG - brands array:', state.brands);
+        console.log('[WC AJAX FILTERS] SAFARI DEBUG - categories array:', payload.categories);
+        console.log('[WC AJAX FILTERS] SAFARI DEBUG - product_types array:', state.productTypes);
+
+        $.ajax({
+            url: ajaxUrl,
+            type: 'POST',
+            data: payload,
+            traditional: true,  // ⭐ CRÍTICO para Safari: serializa arrays como brands[]=1&brands[]=2
+            dataType: 'text',  // ⭐ CAMBIO: Recibir como texto primero para ver qué llega
+            xhrFields: {
+                withCredentials: true  // ⭐ CRÍTICO Safari: incluir cookies en el request
+            },
+            beforeSend: function(xhr, settings) {
+                console.log('[WC AJAX FILTERS] SAFARI DEBUG - Request URL:', settings.url);
+                console.log('[WC AJAX FILTERS] SAFARI DEBUG - Request data:', settings.data);
+            },
+            success: function (response) {
+                console.log('[WC AJAX FILTERS] SAFARI DEBUG - Response RAW recibida (primeros 500 chars):', response.substring(0, 500));
+                console.log('[WC AJAX FILTERS] SAFARI DEBUG - Response length:', response.length);
+                
+                // Intentar parsear el JSON manualmente
+                try {
+                    var jsonResponse = JSON.parse(response);
+                    console.log('[WC AJAX FILTERS] SAFARI DEBUG - JSON parseado correctamente:', jsonResponse);
+                    
+                    if (jsonResponse.success) {
+                        $productList.html(jsonResponse.data);
+                        ensureLoader();
+                        $productList.find('#ajax-loader').hide();
+                        addPaginationArrows();
+                        $('.woocommerce-pagination .page-numbers').removeClass('current');
+                        $('.woocommerce-pagination .page-numbers[data-page="' + currentPage + '"]').addClass('current');
+                    } else {
+                        console.error('[WC AJAX FILTERS] SAFARI DEBUG - Response.success = false');
+                        $productList.html('<p>No hay productos para mostrar.</p>');
+                        $productList.find('#ajax-loader').hide();
+                    }
+                } catch(e) {
+                    console.error('[WC AJAX FILTERS] SAFARI DEBUG - ERROR parseando JSON:', e.message);
+                    console.error('[WC AJAX FILTERS] SAFARI DEBUG - Response que causó el error:', response);
+                    $productList.html('<p>Error al cargar productos. Revisa la consola.</p>');
+                    $productList.find('#ajax-loader').hide();
+                }
+            },
+            error: function (xhr, status, error) {
+                console.error('[WC AJAX FILTERS] SAFARI DEBUG - Error AJAX:', {xhr: xhr, status: status, error: error});
+                $productList.html('<p>Error al cargar productos. Por favor, intenta de nuevo.</p>');
+                $productList.find('#ajax-loader').hide();
+            }
+        });
+    }
+
+    // Mobile modal functionality
+    var $mobileToggle = $('#wcaf-mobile-toggle');
+    var $modalOverlay = $('#wcaf-modal-overlay');
+    var $modalClose = $('#wcaf-modal-close');
+    var $modalContent = $('#wcaf-modal-content');
+    var $applyFilters = $('#wcaf-apply-filters');
+    var $clearFilters = $('#wcaf-clear-filters');
+
+    // Clone desktop filters to modal on first open
+    var filtersCloned = false;
+
+    function cloneFiltersToModal() {
+        if (!filtersCloned) {
+            var $desktopSections = $filtersCard.find('.wcaf-section').clone();
+            $modalContent.html($desktopSections);
+            filtersCloned = true;
+        }
+    }
+
+    // Open mobile modal
+    $mobileToggle.on('click', function() {
+        cloneFiltersToModal();
+        $modalOverlay.addClass('active');
+        $('body').css('overflow', 'hidden');
+    });
+
+    // Close mobile modal
+    function closeMobileModal() {
+        $modalOverlay.removeClass('active');
+        $('body').css('overflow', '');
+    }
+
+    $modalClose.on('click', closeMobileModal);
+    
+    $modalOverlay.on('click', function(e) {
+        if (e.target === this) {
+            closeMobileModal();
+        }
+    });
+
+    // Apply filters from modal
+    $applyFilters.on('click', function() {
+        // Sync modal selections back to desktop filters
+        var $modalBrandInputs = $modalContent.find('.wcaf-filter-brand');
+        var $modalMinPrice = $modalContent.find('#wcaf-min-price');
+        var $modalMaxPrice = $modalContent.find('#wcaf-max-price');
+
+        // Update desktop brand selections
+        $brandInputs.prop('checked', false);
+        $modalBrandInputs.each(function() {
+            if ($(this).is(':checked')) {
+                var value = $(this).val();
+                $brandInputs.filter('[value="' + value + '"]').prop('checked', true);
+            }
+        });
+
+        // Update desktop price
+        if ($modalMinPrice.length && $modalMaxPrice.length) {
+            setPriceState($modalMinPrice.val(), $modalMaxPrice.val());
+        }
+
+        // Apply filters and close modal
+        collectBrandSelection();
+        loadProducts(1);
+        closeMobileModal();
+    });
+
+    // Clear filters from modal
+    $clearFilters.on('click', function() {
+        // Clear modal selections
+        $modalContent.find('.wcaf-filter-brand').prop('checked', false);
+        $modalContent.find('#wcaf-min-price').val(defaults.minPrice);
+        $modalContent.find('#wcaf-max-price').val(defaults.maxPrice);
+        
+        // Clear desktop selections
+        state.minPrice = defaults.minPrice;
+        state.maxPrice = defaults.maxPrice;
+        state.brands = [];
+        $brandInputs.prop('checked', false);
+        syncInputsFromState();
+        
+        loadProducts(1);
+        closeMobileModal();
+    });
+
+    // Handle modal section toggles
+    $(document).on('click', '.wcaf-modal-content .wcaf-section__toggle', function(event) {
+        event.preventDefault();
+        var $section = $(this).closest('.wcaf-section');
+        var isOpen = $section.hasClass('is-open');
+        $section.toggleClass('is-open', !isOpen);
+        $(this).attr('aria-expanded', !isOpen);
+    });
+
+    collectBrandSelection();
+    collectProductTypeSelection();
+    syncInputsFromState();
+    updatePriceTrack();
+
+    setTimeout(addPaginationArrows, 500);
+    setInterval(addPaginationArrows, 2000);
+    
+    // ⭐ NUEVO: Si estamos en una página de marca, auto-aplicar el filtro de esa marca
+    var $brandPage = $('.opticavision-brand-page');
+    console.log('[WC AJAX FILTERS] Buscando elemento .opticavision-brand-page:', $brandPage.length);
+    
+    if ($brandPage.length) {
+        var brandSlug = $brandPage.data('brand-slug');
+        var brandName = $brandPage.data('brand-name');
+        console.log('[WC AJAX FILTERS] Página de marca detectada:', brandName, '(' + brandSlug + ')');
+        console.log('[WC AJAX FILTERS] Total de checkboxes de marca disponibles:', $brandInputs.length);
+        
+        // Buscar el checkbox de la marca
+        var $targetCheckbox = $brandInputs.filter('[value="' + brandSlug + '"]');
+        console.log('[WC AJAX FILTERS] Checkbox encontrado para slug "' + brandSlug + '":', $targetCheckbox.length);
+        
+        if ($targetCheckbox.length) {
+            // Marcar el checkbox de la marca correspondiente
+            $targetCheckbox.prop('checked', true);
+            console.log('[WC AJAX FILTERS] Checkbox marcado correctamente');
+            
+            // Actualizar el estado y cargar productos con el filtro aplicado
+            collectBrandSelection();
+            console.log('[WC AJAX FILTERS] Estado de marcas después de collectBrandSelection:', state.brands);
+            
+            // Ejecutar loadProducts después de un breve delay para asegurar que el DOM está listo
+            setTimeout(function() {
+                console.log('[WC AJAX FILTERS] Ejecutando loadProducts con filtro de marca aplicado');
+                loadProducts(1);
+            }, 300);
+        } else {
+            console.error('[WC AJAX FILTERS] ERROR: No se encontró checkbox para la marca "' + brandSlug + '"');
+            console.log('[WC AJAX FILTERS] Valores disponibles en checkboxes:', $brandInputs.map(function() { return $(this).val(); }).get());
+        }
+    } else {
+        console.log('[WC AJAX FILTERS] No es una página de marca, carga normal');
+    }
+    
+    // ⭐ NUEVO: Si estamos en una página de búsqueda, ejecutar loadProducts automáticamente
+    // para filtrar los resultados por el término de búsqueda
+    var urlParams = new URLSearchParams(window.location.search);
+    var searchTerm = urlParams.get('s');
+    if (searchTerm && searchTerm.trim() !== '') {
+        console.log('[WC AJAX FILTERS] Página de búsqueda detectada - ejecutando loadProducts automáticamente');
+        console.log('[WC AJAX FILTERS] Término de búsqueda:', searchTerm);
+        // Dar tiempo a que el DOM se estabilice
+        setTimeout(function() {
+            loadProducts(1);
+        }, 300);
+    }
+});
