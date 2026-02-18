@@ -146,9 +146,9 @@ add_action('plugins_loaded', function() {
         return;
     }
     
-    if (is_admin()) {
-        Optica_Vision_Contact_Lenses_Sync::get_instance();
-    }
+    // Initialize in all contexts (admin + cron + frontend)
+    // Admin-specific UI is guarded inside the constructor
+    Optica_Vision_Contact_Lenses_Sync::get_instance();
 });
 
 // Initialize prescription attribute when WooCommerce is fully loaded
