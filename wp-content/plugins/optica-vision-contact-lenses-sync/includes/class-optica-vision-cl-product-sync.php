@@ -29,6 +29,18 @@ class Optica_Vision_CL_Product_Sync {
     ];
     
     /**
+     * Prescription term cache to avoid repeated DB queries
+     * @var array [slug => term_object]
+     */
+    private $prescription_term_cache = [];
+    
+    /**
+     * Whether term cache has been populated
+     * @var bool
+     */
+    private $term_cache_loaded = false;
+    
+    /**
      * Constructor
      * 
      * @param Optica_Vision_CL_API $api API instance
@@ -43,13 +55,16 @@ class Optica_Vision_CL_Product_Sync {
     public function sync_products() {
         // Increase execution time for large syncs
         if (function_exists('set_time_limit')) {
-            @set_time_limit(300); // 5 minutes
+            @set_time_limit(600); // 10 minutes
         }
         
         // Increase memory limit if possible
         if (function_exists('ini_set')) {
             @ini_set('memory_limit', '512M');
         }
+        
+        // Pre-load prescription term cache for the entire sync
+        $this->load_prescription_term_cache();
         
         // Reset statistics
         $this->stats = ['created' => 0, 'updated' => 0, 'variations' => 0, 'skipped' => 0, 'errors' => 0];
@@ -87,11 +102,18 @@ class Optica_Vision_CL_Product_Sync {
             return new WP_Error('no_valid_products', 'No valid contact lens products found after validation. Check API data structure.');
         }
         
+        // Defer expensive operations during bulk processing
+        wp_defer_term_counting(true);
+        wp_suspend_cache_invalidation(true);
+        
         // Process each product group
         $processed = 0;
+        $total_groups = count($grouped_products);
         foreach ($grouped_products as $base_sku => $group) {
             $processed++;
-            error_log(sprintf('[CL SYNC] Processing group %d/%d: %s', $processed, count($grouped_products), $base_sku));
+            if ($processed % 5 === 1 || $processed === $total_groups) {
+                error_log(sprintf('[CL SYNC] Processing group %d/%d: %s', $processed, $total_groups, $base_sku));
+            }
             
             try {
                 $result = $this->sync_variable_product($base_sku, $group);
@@ -106,13 +128,16 @@ class Optica_Vision_CL_Product_Sync {
             }
             
             // Clear WooCommerce caches periodically to prevent memory issues
-            if ($processed % 10 === 0) {
+            if ($processed % 20 === 0) {
                 wc_delete_product_transients();
-                if (function_exists('wp_cache_flush')) {
-                    wp_cache_flush();
-                }
+                wp_cache_flush();
+                error_log(sprintf('[CL SYNC] Progress: %d/%d groups processed', $processed, $total_groups));
             }
         }
+        
+        // Re-enable deferred operations
+        wp_suspend_cache_invalidation(false);
+        wp_defer_term_counting(false);
         
         // Store final sync results
         update_option('optica_vision_cl_last_sync', [
@@ -141,7 +166,10 @@ class Optica_Vision_CL_Product_Sync {
         foreach ($contact_lenses as $lens) {
             // Validate required fields exist
             if (!$this->validate_lens_data($lens)) {
-                error_log('Skipping invalid lens data: ' . json_encode($lens));
+                // Only log first few skipped items to avoid log spam
+                if ($this->stats['skipped'] < 3) {
+                    error_log('[CL SYNC] Skipping invalid lens data: ' . json_encode($lens));
+                }
                 $this->stats['skipped']++;
                 continue;
             }
@@ -301,7 +329,7 @@ class Optica_Vision_CL_Product_Sync {
             $this->stats['created']++;
             $this->stats['variations'] += $variation_count;
             
-            error_log(sprintf('Created variable product: %s (ID: %d) with %d variations', 
+            error_log(sprintf('[CL SYNC] Created product: %s (ID: %d) with %d variations', 
                 $base_info['base_sku'], $product_id, $variation_count));
             
             return $product_id;
@@ -349,7 +377,7 @@ class Optica_Vision_CL_Product_Sync {
             $this->stats['updated']++;
             $this->stats['variations'] += $variation_count;
             
-            error_log(sprintf('Updated variable product: %s (ID: %d) with %d variations', 
+            error_log(sprintf('[CL SYNC] Updated product: %s (ID: %d) with %d variations', 
                 $base_info['base_sku'], $product_id, $variation_count));
             
             return $product_id;
@@ -383,8 +411,7 @@ class Optica_Vision_CL_Product_Sync {
         // Batch create/get prescription terms - use cache to avoid repeated queries
         $prescription_terms = $this->batch_get_or_create_prescription_terms($prescription_values);
         
-        error_log(sprintf('[CL SYNC PERF] Setting attributes for product %d with %d prescription values', 
-            $product_id, count($prescription_values)));
+        // Log only for debugging context, not per-variation
         
         // Create the attribute for the product using proper WC_Product_Attribute class
         $attribute_taxonomy_name = 'pa_prescription';
@@ -433,7 +460,7 @@ class Optica_Vision_CL_Product_Sync {
         // It will be called once at the end via update_variable_product_price_range()
         // WC_Product_Variable::sync($product_id); // REMOVED - too expensive
         
-        error_log(sprintf('[CL SYNC PERF] Attributes set for product %d with %d terms (optimized)', 
+        error_log(sprintf('[CL SYNC] Attributes set for product %d with %d terms', 
             $product_id, count($prescription_terms)));
         
         return true;
@@ -505,17 +532,16 @@ class Optica_Vision_CL_Product_Sync {
     
     /**
      * Sync variations (update existing or create new) - OPTIMIZED VERSION
-     * Uses direct database queries instead of N+1 wc_get_product() calls
+     * Uses direct database queries for bulk updates instead of WC CRUD per variation
      */
     private function sync_variations($product_id, $variations) {
         $count = 0;
         global $wpdb;
         
-        // OPTIMIZATION: Get existing variations data with a single query instead of N+1
+        // Get existing variations data with a single query
         $existing_by_sku = [];
         $existing_by_prescription = [];
         
-        // Single query to get all variation IDs and their SKUs
         $variation_data = $wpdb->get_results($wpdb->prepare("
             SELECT p.ID as variation_id, pm.meta_value as sku
             FROM {$wpdb->posts} p
@@ -547,46 +573,46 @@ class Optica_Vision_CL_Product_Sync {
             }
         }
         
-        error_log(sprintf('[CL SYNC PERF] Found %d existing variations by SKU, %d by prescription for product %d (optimized query)', 
-            count($existing_by_sku), count($existing_by_prescription), $product_id));
+        // Separate into updates vs creates
+        $to_update = [];
+        $to_create = [];
         
-        // Process each variation from API
-        foreach ($variations as $variation_data) {
-            $prescription = $variation_data['graduacion'];
-            $sku = $variation_data['codigo'];
+        foreach ($variations as $var_data) {
+            $prescription = $var_data['graduacion'];
+            $sku = $var_data['codigo'];
             
             $existing_variation_id = null;
-            
-            // First try to match by SKU (most reliable)
             if (isset($existing_by_sku[$sku])) {
                 $existing_variation_id = $existing_by_sku[$sku];
-                error_log("Found existing variation by SKU: $sku -> $existing_variation_id");
-            }
-            // Then try to match by prescription
-            elseif (isset($existing_by_prescription[$prescription])) {
+            } elseif (isset($existing_by_prescription[$prescription])) {
                 $existing_variation_id = $existing_by_prescription[$prescription];
-                error_log("Found existing variation by prescription: $prescription -> $existing_variation_id");
             }
             
             if ($existing_variation_id) {
-                // Update existing variation
-                $result = $this->update_single_variation($existing_variation_id, $variation_data);
-                if ($result && !is_wp_error($result)) {
-                    $count++;
-                    error_log("Updated variation $existing_variation_id for prescription $prescription");
-                }
+                $to_update[] = ['id' => $existing_variation_id, 'data' => $var_data];
             } else {
-                // Create new variation - SKU conflict handling is now in create_single_variation
-                error_log("[CL SYNC] Creating new variation for SKU $sku / prescription $prescription");
-                $result = $this->create_single_variation($product_id, $variation_data);
-                if ($result && !is_wp_error($result)) {
-                    $count++;
-                    $this->stats['variations']++;
-                    error_log("[CL SYNC] Created new variation for prescription $prescription");
-                } else {
-                    $error_msg = is_wp_error($result) ? $result->get_error_message() : 'Unknown error';
-                    error_log("[CL SYNC] Failed to create variation for $sku: $error_msg");
-                }
+                $to_create[] = $var_data;
+            }
+        }
+        
+        error_log(sprintf('[CL SYNC] Product %d: %d to update, %d to create', 
+            $product_id, count($to_update), count($to_create)));
+        
+        // BATCH UPDATE existing variations using direct SQL (main optimization)
+        if (!empty($to_update)) {
+            $updated = $this->batch_update_variations_direct($to_update);
+            $count += $updated;
+        }
+        
+        // Create new variations (still uses WC CRUD but only for truly new items)
+        foreach ($to_create as $var_data) {
+            $result = $this->create_single_variation($product_id, $var_data, true);
+            if ($result && !is_wp_error($result)) {
+                $count++;
+                $this->stats['variations']++;
+            } else {
+                $error_msg = is_wp_error($result) ? $result->get_error_message() : 'Unknown error';
+                error_log("[CL SYNC] Failed to create variation for {$var_data['codigo']}: $error_msg");
             }
         }
         
@@ -594,182 +620,264 @@ class Optica_Vision_CL_Product_Sync {
     }
     
     /**
-     * Create a single variation
+     * Batch update existing variations using direct SQL queries
+     * Avoids loading WC product objects entirely - ~50x faster than WC CRUD
      */
-    private function create_single_variation($product_id, $variation_data) {
+    private function batch_update_variations_direct($updates) {
+        global $wpdb;
+        $count = 0;
+        $now = current_time('timestamp');
+        
+        foreach ($updates as $item) {
+            $variation_id = $item['id'];
+            $data = $item['data'];
+            $price = floatval($data['precio']);
+            $stock = floatval($data['existencia']);
+            $stock_status = $stock > 0 ? 'instock' : 'outofstock';
+            
+            // Direct meta updates - replaces wc_get_product() + save() chain
+            $meta_updates = [
+                '_regular_price' => $price,
+                '_price'         => $price,
+                '_stock'         => $stock,
+                '_stock_status'  => $stock_status,
+                '_optica_vision_cl_last_sync' => $now,
+            ];
+            
+            foreach ($meta_updates as $meta_key => $meta_value) {
+                $exists = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s",
+                    $variation_id, $meta_key
+                ));
+                
+                if ($exists) {
+                    $wpdb->update(
+                        $wpdb->postmeta,
+                        ['meta_value' => $meta_value],
+                        ['post_id' => $variation_id, 'meta_key' => $meta_key],
+                        ['%s'],
+                        ['%d', '%s']
+                    );
+                } else {
+                    $wpdb->insert(
+                        $wpdb->postmeta,
+                        ['post_id' => $variation_id, 'meta_key' => $meta_key, 'meta_value' => $meta_value],
+                        ['%d', '%s', '%s']
+                    );
+                }
+            }
+            
+            // Update prescription term if needed
+            $prescription = sanitize_text_field($data['graduacion']);
+            $term = $this->get_or_create_prescription_term($prescription);
+            if ($term && !is_wp_error($term)) {
+                wp_set_object_terms($variation_id, $term->term_id, 'pa_prescription', false);
+                
+                // Also update the variation attribute meta directly
+                update_post_meta($variation_id, 'attribute_pa_prescription', $term->slug);
+            }
+            
+            $count++;
+        }
+        
+        error_log(sprintf('[CL SYNC] Batch updated %d variations via direct SQL', $count));
+        return $count;
+    }
+    
+    /**
+     * Create a single variation
+     * 
+     * @param int   $product_id    Parent product ID
+     * @param array $variation_data API variation data
+     * @param bool  $skip_sku_check Skip SKU existence check (caller already verified)
+     */
+    private function create_single_variation($product_id, $variation_data, $skip_sku_check = false) {
         try {
-            // Validate variation data
             $sku = isset($variation_data['codigo']) ? sanitize_text_field($variation_data['codigo']) : '';
             $price = isset($variation_data['precio']) ? floatval($variation_data['precio']) : 0;
             $stock = isset($variation_data['existencia']) ? floatval($variation_data['existencia']) : 0;
             $prescription = isset($variation_data['graduacion']) ? sanitize_text_field($variation_data['graduacion']) : '';
             
             if (empty($sku)) {
-                error_log('Cannot create variation without SKU');
                 return new WP_Error('missing_sku', 'Variation SKU is required');
             }
             
-            // Check if SKU already exists
-            $existing_id = wc_get_product_id_by_sku($sku);
-            if ($existing_id) {
-                error_log("SKU already exists: $sku (Product ID: $existing_id), updating instead");
-                return $this->update_single_variation($existing_id, $variation_data);
+            // Check if SKU already exists (skip when caller already verified)
+            if (!$skip_sku_check) {
+                $existing_id = wc_get_product_id_by_sku($sku);
+                if ($existing_id) {
+                    return $this->update_single_variation($existing_id, $variation_data);
+                }
             }
             
             $variation = new WC_Product_Variation();
             $variation->set_parent_id($product_id);
-            
-            // Set basic variation data
             $variation->set_sku($sku);
             $variation->set_regular_price($price);
             $variation->set_stock_quantity($stock);
             $variation->set_manage_stock(true);
             $variation->set_stock_status($stock > 0 ? 'instock' : 'outofstock');
             
-            // Set prescription attribute
-            $prescription_attr = 'pa_prescription'; // WooCommerce attribute taxonomy naming convention
-            $prescription_value = $prescription;
-            
-            // Create or get prescription term
-            $term = $this->get_or_create_prescription_term($prescription_value);
+            // Get prescription term from cache
+            $term = $this->get_or_create_prescription_term($prescription);
             
             if ($term && !is_wp_error($term)) {
-                // Set the attribute using the term slug
                 $variation->set_attributes([
-                    $prescription_attr => $term->slug
+                    'pa_prescription' => $term->slug
                 ]);
-                
-                error_log(sprintf('Setting variation attribute: %s = %s (term ID: %d)', 
-                    $prescription_attr, $term->slug, $term->term_id));
             } else {
-                error_log('Failed to get/create prescription term for: ' . $prescription_value);
-                if (is_wp_error($term)) {
-                    error_log('Term error: ' . $term->get_error_message());
-                }
+                error_log('[CL SYNC] Failed to get/create prescription term for: ' . $prescription);
                 return new WP_Error('term_creation_failed', 'Failed to create prescription term');
             }
             
             // Add variation meta
             $variation->add_meta_data('_optica_vision_cl_sync', true);
             $variation->add_meta_data('_optica_vision_cl_last_sync', current_time('timestamp'));
-            $variation->add_meta_data('_optica_vision_cl_raw_data', json_encode($variation_data));
             
             $variation_id = $variation->save();
             
             if ($variation_id) {
-                // Set the term relationship for the variation after it's saved
                 if ($term && !is_wp_error($term)) {
-                    wp_set_object_terms($variation_id, $term->term_id, $prescription_attr, false);
+                    wp_set_object_terms($variation_id, $term->term_id, 'pa_prescription', false);
                 }
-                
-                // OPTIMIZATION: Removed wc_get_product() call here - it was only for logging
-                // and caused unnecessary database queries
-                error_log(sprintf('[CL SYNC PERF] Created variation: %s (ID: %d) for prescription %s', 
-                    $variation_data['codigo'], $variation_id, $variation_data['graduacion']));
-                
                 return $variation_id;
             }
             
             return new WP_Error('variation_creation_failed', 'Failed to create variation');
             
         } catch (Exception $e) {
-            error_log('Failed to create variation: ' . $e->getMessage());
+            error_log('[CL SYNC] Failed to create variation: ' . $e->getMessage());
             return new WP_Error('variation_creation_exception', $e->getMessage());
         }
     }
     
     /**
-     * Update a single variation
+     * Update a single variation using direct DB queries
+     * Used as fallback from create_single_variation when SKU already exists
      */
     private function update_single_variation($variation_id, $variation_data) {
         try {
-            $variation = wc_get_product($variation_id);
-            if (!$variation) {
-                return new WP_Error('variation_not_found', 'Variation not found');
-            }
+            global $wpdb;
             
-            // Update variation data
-            $variation->set_regular_price($variation_data['precio']);
-            $variation->set_stock_quantity(floatval($variation_data['existencia']));
-            $variation->set_stock_status(floatval($variation_data['existencia']) > 0 ? 'instock' : 'outofstock');
+            $price = floatval($variation_data['precio']);
+            $stock = floatval($variation_data['existencia']);
+            $stock_status = $stock > 0 ? 'instock' : 'outofstock';
+            $now = current_time('timestamp');
             
-            // Set prescription attribute if not already set
-            $prescription_attr = 'pa_prescription';
-            $prescription_value = $variation_data['graduacion'];
+            // Direct meta updates - avoids wc_get_product() + save() overhead
+            $meta_updates = [
+                '_regular_price' => $price,
+                '_price'         => $price,
+                '_stock'         => $stock,
+                '_stock_status'  => $stock_status,
+                '_optica_vision_cl_last_sync' => $now,
+            ];
             
-            // Create or get prescription term
-            $term = $this->get_or_create_prescription_term($prescription_value);
-            
-            if ($term && !is_wp_error($term)) {
-                // Set the attribute using the term slug
-                $variation->set_attributes([
-                    $prescription_attr => $term->slug
-                ]);
+            foreach ($meta_updates as $meta_key => $meta_value) {
+                $exists = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = %s",
+                    $variation_id, $meta_key
+                ));
                 
-                error_log(sprintf('Set prescription attribute for variation %d: %s = %s', 
-                    $variation_id, $prescription_attr, $term->slug));
-            } else {
-                error_log('Failed to get/create prescription term for variation update: ' . $prescription_value);
+                if ($exists) {
+                    $wpdb->update(
+                        $wpdb->postmeta,
+                        ['meta_value' => $meta_value],
+                        ['post_id' => $variation_id, 'meta_key' => $meta_key],
+                        ['%s'],
+                        ['%d', '%s']
+                    );
+                } else {
+                    $wpdb->insert(
+                        $wpdb->postmeta,
+                        ['post_id' => $variation_id, 'meta_key' => $meta_key, 'meta_value' => $meta_value],
+                        ['%d', '%s', '%s']
+                    );
+                }
             }
             
-            // Update meta data
-            $variation->update_meta_data('_optica_vision_cl_last_sync', current_time('timestamp'));
-            $variation->update_meta_data('_optica_vision_cl_raw_data', json_encode($variation_data));
-            
-            $variation->save();
-            
-            // Set the term relationship for the variation after it's saved
+            // Update prescription term
+            $prescription = sanitize_text_field($variation_data['graduacion']);
+            $term = $this->get_or_create_prescription_term($prescription);
             if ($term && !is_wp_error($term)) {
-                wp_set_object_terms($variation_id, $term->term_id, $prescription_attr, false);
+                wp_set_object_terms($variation_id, $term->term_id, 'pa_prescription', false);
+                update_post_meta($variation_id, 'attribute_pa_prescription', $term->slug);
             }
-            
-            error_log(sprintf('Updated variation: %s for prescription %s', 
-                $variation_data['codigo'], $variation_data['graduacion']));
             
             return $variation_id;
             
         } catch (Exception $e) {
-            error_log('Failed to update variation: ' . $e->getMessage());
+            error_log('[CL SYNC] Failed to update variation: ' . $e->getMessage());
             return new WP_Error('variation_update_exception', $e->getMessage());
         }
     }
     
     /**
-     * Get or create prescription term
+     * Load all prescription terms into cache (called once per sync)
+     */
+    private function load_prescription_term_cache() {
+        $taxonomy = 'pa_prescription';
+        
+        if (!taxonomy_exists($taxonomy)) {
+            return;
+        }
+        
+        $terms = get_terms([
+            'taxonomy' => $taxonomy,
+            'hide_empty' => false,
+        ]);
+        
+        if (!is_wp_error($terms)) {
+            foreach ($terms as $term) {
+                $this->prescription_term_cache[$term->slug] = $term;
+                $this->prescription_term_cache['name:' . $term->name] = $term;
+            }
+        }
+        
+        $this->term_cache_loaded = true;
+        error_log(sprintf('[CL SYNC] Loaded %d prescription terms into cache', count($terms)));
+    }
+    
+    /**
+     * Get or create prescription term - uses cache to avoid per-variation DB queries
      */
     private function get_or_create_prescription_term($prescription) {
-        $taxonomy = 'pa_prescription'; // WooCommerce attribute taxonomy naming convention
+        $taxonomy = 'pa_prescription';
         
-        // Ensure taxonomy exists
         if (!taxonomy_exists($taxonomy)) {
-            error_log("Prescription taxonomy does not exist: $taxonomy");
             return new WP_Error('taxonomy_missing', "Prescription taxonomy does not exist: $taxonomy");
         }
         
-        // Check if term exists by slug first (more reliable)
         $slug = sanitize_title($prescription);
-        $term = get_term_by('slug', $slug, $taxonomy);
         
+        // Check cache first (avoids DB query entirely)
+        if (isset($this->prescription_term_cache[$slug])) {
+            return $this->prescription_term_cache[$slug];
+        }
+        if (isset($this->prescription_term_cache['name:' . $prescription])) {
+            return $this->prescription_term_cache['name:' . $prescription];
+        }
+        
+        // Not in cache - check DB (rare case: new term during sync)
+        $term = get_term_by('slug', $slug, $taxonomy);
         if (!$term) {
-            // Check by name as fallback
             $term = get_term_by('name', $prescription, $taxonomy);
         }
         
         if (!$term) {
-            // Create the term
-            $result = wp_insert_term($prescription, $taxonomy, [
-                'slug' => $slug
-            ]);
-            
+            $result = wp_insert_term($prescription, $taxonomy, ['slug' => $slug]);
             if (is_wp_error($result)) {
-                error_log('Failed to create prescription term "' . $prescription . '": ' . $result->get_error_message());
+                error_log('[CL SYNC] Failed to create prescription term "' . $prescription . '": ' . $result->get_error_message());
                 return $result;
             }
-            
             $term = get_term($result['term_id'], $taxonomy);
-            error_log('Created prescription term: ' . $prescription . ' (ID: ' . $term->term_id . ')');
-        } else {
-            error_log('Found existing prescription term: ' . $prescription . ' (ID: ' . $term->term_id . ')');
+            error_log('[CL SYNC] Created new prescription term: ' . $prescription);
+        }
+        
+        // Add to cache for subsequent lookups
+        if ($term && !is_wp_error($term)) {
+            $this->prescription_term_cache[$term->slug] = $term;
+            $this->prescription_term_cache['name:' . $term->name] = $term;
         }
         
         return $term;
