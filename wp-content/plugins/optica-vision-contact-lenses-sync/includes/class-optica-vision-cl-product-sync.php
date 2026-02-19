@@ -345,30 +345,37 @@ class Optica_Vision_CL_Product_Sync {
     }
     
     /**
-     * Update an existing variable product
+     * Update an existing variable product using direct DB queries
+     * Avoids $product->save() which triggers WC_Product_Variable::sync()
+     * and causes multi-minute delays recalculating all variation data
      */
     private function update_variable_product($product_id, $base_info, $variations) {
         try {
-            $product = wc_get_product($product_id);
-            if (!$product) {
-                return new WP_Error('product_not_found', 'Product not found');
-            }
+            global $wpdb;
             
-            // Update basic product data
-            $product->set_name($base_info['name']);
-            $product->set_description($base_info['description']);
-            $product->set_short_description($base_info['description']);
+            // Update post data directly (bypasses WC hooks)
+            $wpdb->update(
+                $wpdb->posts,
+                [
+                    'post_title'   => sanitize_text_field($base_info['name']),
+                    'post_content' => wp_kses_post($base_info['description']),
+                    'post_excerpt' => wp_kses_post($base_info['description']),
+                ],
+                ['ID' => $product_id],
+                ['%s', '%s', '%s'],
+                ['%d']
+            );
             
             // Update categories
             $category_ids = $this->get_or_create_categories($base_info['brand']);
-            $product->set_category_ids($category_ids);
+            if (!empty($category_ids)) {
+                wp_set_object_terms($product_id, $category_ids, 'product_cat');
+            }
             
-            // Update meta data
-            $product->update_meta_data('_optica_vision_cl_last_sync', current_time('timestamp'));
+            // Update sync meta
+            update_post_meta($product_id, '_optica_vision_cl_last_sync', current_time('timestamp'));
             
-            error_log(sprintf('[CL SYNC] Saving parent product %d...', $product_id));
-            $product->save();
-            error_log(sprintf('[CL SYNC] Parent product %d saved. Setting attributes...', $product_id));
+            error_log(sprintf('[CL SYNC] Parent product %d updated via direct DB. Setting attributes...', $product_id));
             
             // Create prescription attribute if it doesn't exist
             optica_vision_cl_ensure_prescription_attribute();
@@ -384,6 +391,10 @@ class Optica_Vision_CL_Product_Sync {
             // Update the variable product with price range
             $this->update_variable_product_price_range($product_id);
             error_log(sprintf('[CL SYNC] Price range updated for product %d', $product_id));
+            
+            // Clean the product cache once at the end
+            wc_delete_product_transients($product_id);
+            clean_post_cache($product_id);
             
             $this->stats['updated']++;
             $this->stats['variations'] += $variation_count;
@@ -403,32 +414,21 @@ class Optica_Vision_CL_Product_Sync {
 
     
     /**
-     * Set product attributes for variations - OPTIMIZED VERSION
-     * Eliminates N+1 queries by not iterating over existing variations
+     * Set product attributes for variations - DIRECT DB VERSION
+     * Uses update_post_meta instead of $product->save() to avoid WC_Product_Variable::sync()
      */
     private function set_product_attributes($product_id, $variations) {
-        $product = wc_get_product($product_id);
-        if (!$product) {
-            return false;
-        }
-        
-        // Get all prescription values from API data (not from DB)
+        // Get all prescription values from API data
         $prescription_values = [];
         foreach ($variations as $variation_data) {
             $prescription_values[] = $variation_data['graduacion'];
         }
         $prescription_values = array_unique($prescription_values);
         
-        // Batch create/get prescription terms - use cache to avoid repeated queries
+        // Batch create/get prescription terms
         $prescription_terms = $this->batch_get_or_create_prescription_terms($prescription_values);
         
-        // Log only for debugging context, not per-variation
-        
-        // Create the attribute for the product using proper WC_Product_Attribute class
         $attribute_taxonomy_name = 'pa_prescription';
-        
-        // Create a proper WooCommerce product attribute
-        $attribute = new WC_Product_Attribute();
         
         // Get attribute ID - cache this value
         static $attribute_id = null;
@@ -445,33 +445,24 @@ class Optica_Vision_CL_Product_Sync {
             }
         }
         
-        $attribute->set_id($attribute_id);
-        $attribute->set_name($attribute_taxonomy_name);
-        $attribute->set_options($prescription_terms);
-        $attribute->set_position(0);
-        $attribute->set_visible(true);
-        $attribute->set_variation(true);
-        
-        // Set the attributes on the product
-        $attributes = [];
-        $attributes[$attribute_taxonomy_name] = $attribute;
-        $product->set_attributes($attributes);
+        // Build WC-compatible attribute data and save directly to post meta
+        // This bypasses $product->save() which triggers WC_Product_Variable::sync()
+        $attribute_data = [
+            $attribute_taxonomy_name => [
+                'name'         => $attribute_taxonomy_name,
+                'value'        => '',
+                'position'     => 0,
+                'is_visible'   => 1,
+                'is_variation' => 1,
+                'is_taxonomy'  => 1,
+            ]
+        ];
+        update_post_meta($product_id, '_product_attributes', $attribute_data);
         
         // Set the attribute terms on the product
         wp_set_object_terms($product_id, $prescription_terms, $attribute_taxonomy_name);
         
-        // Save the product
-        $product->save();
-        
-        // OPTIMIZATION: Skip iterating over existing variations here
-        // Term relationships will be set when creating/updating individual variations
-        // This eliminates N+1 queries that were causing timeouts
-        
-        // OPTIMIZATION: Skip WC_Product_Variable::sync() during batch processing
-        // It will be called once at the end via update_variable_product_price_range()
-        // WC_Product_Variable::sync($product_id); // REMOVED - too expensive
-        
-        error_log(sprintf('[CL SYNC] Attributes set for product %d with %d terms', 
+        error_log(sprintf('[CL SYNC] Attributes set for product %d with %d terms (direct DB)', 
             $product_id, count($prescription_terms)));
         
         return true;
@@ -895,14 +886,51 @@ class Optica_Vision_CL_Product_Sync {
     }
     
     /**
-     * Update variable product price range
+     * Update variable product price range using direct SQL
+     * Replaces $product->variable_product_sync() which is extremely expensive
      */
     private function update_variable_product_price_range($product_id) {
-        $product = wc_get_product($product_id);
-        if ($product && $product->is_type('variable')) {
-            // Force WooCommerce to recalculate price range
-            $product->variable_product_sync();
+        global $wpdb;
+        
+        // Calculate min/max prices from variations directly
+        $price_data = $wpdb->get_row($wpdb->prepare("
+            SELECT 
+                MIN(CAST(pm.meta_value AS DECIMAL(10,2))) as min_price,
+                MAX(CAST(pm.meta_value AS DECIMAL(10,2))) as max_price
+            FROM {$wpdb->postmeta} pm
+            INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+            WHERE p.post_parent = %d 
+            AND p.post_type = 'product_variation'
+            AND p.post_status = 'publish'
+            AND pm.meta_key = '_price'
+            AND pm.meta_value != ''
+            AND pm.meta_value IS NOT NULL
+        ", $product_id));
+        
+        if ($price_data && $price_data->min_price !== null) {
+            update_post_meta($product_id, '_price', $price_data->min_price);
+            update_post_meta($product_id, '_min_variation_price', $price_data->min_price);
+            update_post_meta($product_id, '_max_variation_price', $price_data->max_price);
+            update_post_meta($product_id, '_min_variation_regular_price', $price_data->min_price);
+            update_post_meta($product_id, '_max_variation_regular_price', $price_data->max_price);
         }
+        
+        // Calculate stock status from variations
+        $in_stock_count = $wpdb->get_var($wpdb->prepare("
+            SELECT COUNT(*)
+            FROM {$wpdb->postmeta} pm
+            INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+            WHERE p.post_parent = %d 
+            AND p.post_type = 'product_variation'
+            AND pm.meta_key = '_stock_status'
+            AND pm.meta_value = 'instock'
+        ", $product_id));
+        
+        $stock_status = $in_stock_count > 0 ? 'instock' : 'outofstock';
+        update_post_meta($product_id, '_stock_status', $stock_status);
+        
+        // Delete transients so prices refresh on frontend
+        delete_transient('wc_var_prices_' . $product_id);
     }
     
     /**
