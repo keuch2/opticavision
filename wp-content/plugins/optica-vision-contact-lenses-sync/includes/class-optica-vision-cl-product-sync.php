@@ -102,9 +102,9 @@ class Optica_Vision_CL_Product_Sync {
             return new WP_Error('no_valid_products', 'No valid contact lens products found after validation. Check API data structure.');
         }
         
-        // Defer expensive operations during bulk processing
+        // Defer term counting during bulk processing (safe)
         wp_defer_term_counting(true);
-        wp_suspend_cache_invalidation(true);
+        // NOTE: wp_suspend_cache_invalidation removed - causes PHP segfault with WC hooks
         
         // Process each product group
         $processed = 0;
@@ -136,7 +136,6 @@ class Optica_Vision_CL_Product_Sync {
         }
         
         // Re-enable deferred operations
-        wp_suspend_cache_invalidation(false);
         wp_defer_term_counting(false);
         
         // Store final sync results
@@ -266,14 +265,18 @@ class Optica_Vision_CL_Product_Sync {
             $variations = $group['variations'];
             
             // Find existing product by base SKU
+            error_log(sprintf('[CL SYNC] sync_variable_product: looking up SKU %s', $base_sku));
             $existing_product_id = wc_get_product_id_by_sku($base_sku);
             
             if ($existing_product_id) {
+                error_log(sprintf('[CL SYNC] Found existing product ID %d for SKU %s, updating...', $existing_product_id, $base_sku));
                 $result = $this->update_variable_product($existing_product_id, $base_info, $variations);
             } else {
+                error_log(sprintf('[CL SYNC] No existing product for SKU %s, creating...', $base_sku));
                 $result = $this->create_variable_product($base_info, $variations);
             }
             
+            error_log(sprintf('[CL SYNC] sync_variable_product completed for %s', $base_sku));
             return $result;
             
         } catch (Exception $e) {
@@ -363,16 +366,24 @@ class Optica_Vision_CL_Product_Sync {
             // Update meta data
             $product->update_meta_data('_optica_vision_cl_last_sync', current_time('timestamp'));
             
+            error_log(sprintf('[CL SYNC] Saving parent product %d...', $product_id));
             $product->save();
+            error_log(sprintf('[CL SYNC] Parent product %d saved. Setting attributes...', $product_id));
             
-            // Update product attributes with all prescription terms from variations
+            // Create prescription attribute if it doesn't exist
+            optica_vision_cl_ensure_prescription_attribute();
+            
+            // Set product attributes
             $this->set_product_attributes($product_id, $variations);
+            error_log(sprintf('[CL SYNC] Attributes set for product %d. Syncing %d variations...', $product_id, count($variations)));
             
             // Update or create variations
             $variation_count = $this->sync_variations($product_id, $variations);
+            error_log(sprintf('[CL SYNC] Variations synced (%d). Updating price range...', $variation_count));
             
             // Update the variable product with price range
             $this->update_variable_product_price_range($product_id);
+            error_log(sprintf('[CL SYNC] Price range updated for product %d', $product_id));
             
             $this->stats['updated']++;
             $this->stats['variations'] += $variation_count;
