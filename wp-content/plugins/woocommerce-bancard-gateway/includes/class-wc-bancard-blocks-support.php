@@ -24,7 +24,6 @@ class WC_Bancard_Blocks_Support extends AbstractPaymentMethodType {
      * Constructor
      */
     public function __construct() {
-        error_log('[BANCARD BLOCKS DEBUG] Constructor called');
         $this->initialize();
     }
 
@@ -32,28 +31,15 @@ class WC_Bancard_Blocks_Support extends AbstractPaymentMethodType {
      * Initialize
      */
     public function initialize() {
-        error_log('[BANCARD BLOCKS DEBUG] Initialize called');
         $this->settings = get_option('woocommerce_bancard_settings', []);
-        // Redact sensitive data before logging
-        $safe_settings = $this->settings;
-        if (isset($safe_settings['private_key'])) {
-            $safe_settings['private_key'] = '[REDACTED]';
-        }
-        if (isset($safe_settings['public_key'])) {
-            $safe_settings['public_key'] = substr($safe_settings['public_key'], 0, 8) . '...';
-        }
-        error_log('[BANCARD BLOCKS DEBUG] Settings loaded: ' . print_r($safe_settings, true));
     }
 
     /**
      * Check if gateway is active
      */
     public function is_active() {
-        error_log('[BANCARD BLOCKS DEBUG] is_active() called');
         $gateway = WC()->payment_gateways()->payment_gateways()['bancard'] ?? null;
-        $is_available = $gateway && $gateway->is_available();
-        error_log('[BANCARD BLOCKS DEBUG] is_active() result: ' . ($is_available ? 'true' : 'false'));
-        return $is_available;
+        return $gateway && $gateway->is_available();
     }
 
     /**
@@ -63,12 +49,6 @@ class WC_Bancard_Blocks_Support extends AbstractPaymentMethodType {
         $script_path = WC_BANCARD_PLUGIN_URL . 'assets/js/bancard-blocks.js';
         $script_asset_path = WC_BANCARD_PLUGIN_DIR . 'assets/js/bancard-blocks.asset.php';
         
-        // Debug: Log paths para verificar
-        error_log('[BANCARD BLOCKS DEBUG] Script path: ' . $script_path);
-        error_log('[BANCARD BLOCKS DEBUG] Script asset path: ' . $script_asset_path);
-        error_log('[BANCARD BLOCKS DEBUG] Asset file exists: ' . (file_exists($script_asset_path) ? 'YES' : 'NO'));
-        error_log('[BANCARD BLOCKS DEBUG] JS file exists: ' . (file_exists(WC_BANCARD_PLUGIN_DIR . 'assets/js/bancard-blocks.js') ? 'YES' : 'NO'));
-        
         $script_asset = file_exists($script_asset_path)
             ? require($script_asset_path)
             : array(
@@ -76,8 +56,6 @@ class WC_Bancard_Blocks_Support extends AbstractPaymentMethodType {
                 'version' => defined('WC_BANCARD_VERSION') ? WC_BANCARD_VERSION : '1.0.0'
             );
             
-        error_log('[BANCARD BLOCKS DEBUG] Dependencies: ' . implode(', ', $script_asset['dependencies']));
-        
         wp_register_script(
             'wc-bancard-payments-blocks',
             $script_path,
@@ -114,7 +92,6 @@ class WC_Bancard_Blocks_Support extends AbstractPaymentMethodType {
             'before'
         );
 
-        error_log('[BANCARD BLOCKS DEBUG] Script registered: wc-bancard-payments-blocks');
         return array('wc-bancard-payments-blocks');
     }
 

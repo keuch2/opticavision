@@ -95,38 +95,14 @@ add_action( 'init', 'wc_bancard_load_textdomain' );
  * Register Bancard payment method with WooCommerce Blocks
  */
 function wc_bancard_register_blocks_support() {
-    error_log('[BANCARD DEBUG] Registering Bancard for WooCommerce Blocks');
-    
     if (class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
-        error_log('[BANCARD DEBUG] AbstractPaymentMethodType class available');
-        
-        // Try multiple registration approaches
         add_action(
             'woocommerce_blocks_payment_method_type_registration',
             function( Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry $payment_method_registry ) {
-                error_log('[BANCARD DEBUG] Blocks payment method registration hook called');
-                error_log('[BANCARD DEBUG] PaymentMethodRegistry available: ' . (is_object($payment_method_registry) ? 'YES' : 'NO'));
-                
                 if (class_exists('WC_Bancard_Blocks_Support')) {
-                    error_log('[BANCARD DEBUG] WC_Bancard_Blocks_Support class exists');
-                    $blocks_support = new WC_Bancard_Blocks_Support();
-                    error_log('[BANCARD DEBUG] WC_Bancard_Blocks_Support instance created');
-                    $payment_method_registry->register( $blocks_support );
-                    error_log('[BANCARD DEBUG] WC_Bancard_Blocks_Support registered with registry');
-                } else {
-                    error_log('[BANCARD ERROR] WC_Bancard_Blocks_Support class does NOT exist');
+                    $payment_method_registry->register( new WC_Bancard_Blocks_Support() );
                 }
             }
         );
-        
-        // Also try late hook
-        add_action( 'wp_loaded', function() {
-            error_log('[BANCARD DEBUG] wp_loaded hook - trying alternative registration');
-            if ( function_exists( 'woocommerce_store_api_register_payment_requirements' ) ) {
-                error_log('[BANCARD DEBUG] Store API functions available');
-            }
-        }, 20 );
-    } else {
-        error_log('[BANCARD DEBUG] WooCommerce Blocks not available or AbstractPaymentMethodType not found');
     }
 }
