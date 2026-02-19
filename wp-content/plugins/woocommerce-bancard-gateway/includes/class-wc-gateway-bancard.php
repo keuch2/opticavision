@@ -80,30 +80,10 @@ class WC_Gateway_Bancard extends WC_Payment_Gateway {
     }
 
     public function is_available() {
-        // Debug logging temporal
-        error_log('[BANCARD DEBUG] is_available() llamado');
-        
-        $enabled = $this->get_option( 'enabled', 'no' );
-        error_log('[BANCARD DEBUG] enabled setting: ' . $enabled);
-        
-        if ( 'yes' !== $enabled ) {
-            error_log('[BANCARD DEBUG] Gateway disabled, returning false');
+        if ( 'yes' !== $this->get_option( 'enabled', 'no' ) ) {
             return false;
         }
-        
-        $parent_available = parent::is_available();
-        error_log('[BANCARD DEBUG] parent::is_available(): ' . ($parent_available ? 'true' : 'false'));
-        
-        // Información adicional del contexto
-        if (WC() && WC()->cart) {
-            $cart_total = WC()->cart->get_total();
-            $cart_count = WC()->cart->get_cart_contents_count();
-            $cart_empty = WC()->cart->is_empty();
-            error_log('[BANCARD DEBUG] Cart context - Total: ' . strip_tags($cart_total) . ', Count: ' . $cart_count . ', Empty: ' . ($cart_empty ? 'yes' : 'no'));
-        }
-        
-        error_log('[BANCARD DEBUG] Final result: ' . ($parent_available ? 'true' : 'false'));
-        return $parent_available;
+        return parent::is_available();
     }
 
     public function admin_options() {
@@ -138,71 +118,52 @@ class WC_Gateway_Bancard extends WC_Payment_Gateway {
      * Process payment: create Bancard operation and redirect.
      */
     public function process_payment( $order_id ) {
-        // Debug logging temporal
-        error_log('[BANCARD DEBUG] process_payment iniciado para order ID: ' . $order_id);
-        
         $order = wc_get_order( $order_id );
         if ( ! $order ) {
-            error_log('[BANCARD DEBUG] process_payment FAILED: Invalid order');
             wc_add_notice( __( 'Invalid order.', 'wc-bancard' ), 'error' );
             return array( 'result' => 'fail' );
         }
-        
-        error_log('[BANCARD DEBUG] Orden válida, total: ' . $order->get_total());
+
+        WC_Bancard_Logger::info( sprintf( 'process_payment: order #%d, total: %s', $order_id, $order->get_total() ) );
 
         // Prepare amount in PYG
         $store_currency = get_woocommerce_currency();
         $currency = 'PYG';
         $total = (float) $order->get_total();
-        error_log('[BANCARD DEBUG] Store currency: ' . $store_currency);
         if ( $store_currency !== 'PYG' ) {
-            error_log('[BANCARD DEBUG] Moneda no es PYG, obteniendo tasa de cambio...');
             $rate = wc_bancard_get_exchange_rate( $order );
-            error_log('[BANCARD DEBUG] Tasa de cambio obtenida: ' . ($rate ? $rate : 'NULL'));
             if ( ! $rate || $rate <= 0 ) {
-                error_log('[BANCARD DEBUG] process_payment FAILED: Tasa de cambio no configurada');
+                WC_Bancard_Logger::error( 'process_payment: exchange rate not configured' );
                 wc_add_notice( __( 'Bancard: exchange rate not configured.', 'wc-bancard' ), 'error' );
                 return array( 'result' => 'fail' );
             }
             $total = $total * (float) $rate;
-            error_log('[BANCARD DEBUG] Total convertido a PYG: ' . $total);
-        } else {
-            error_log('[BANCARD DEBUG] Moneda ya es PYG, no necesita conversión');
         }
 
         $args = array(
             'amount'      => $total,
             'currency'    => $currency,
-            'description' => sprintf( __( 'Order (%s %s)', 'wc-bancard' ), get_woocommerce_currency_symbol( get_woocommerce_currency() ), wc_price( $order->get_total(), array( 'currency' => get_woocommerce_currency(), 'plain_text' => true ) ) ),
+            'description' => sprintf( __( 'Order #%d', 'wc-bancard' ), $order_id ),
             'return_url'  => $order->get_checkout_order_received_url(),
             'cancel_url'  => $order->get_checkout_order_received_url(),
         );
 
-        error_log('[BANCARD DEBUG] Preparando llamada a API con args: ' . json_encode($args));
-        
         $api_resp = WC_Bancard_API::single_buy( $order, $args );
-        error_log('[BANCARD DEBUG] Respuesta de API: ' . json_encode($api_resp));
-        
+
         if ( 'success' !== $api_resp['status'] ) {
             $error_msg = isset( $api_resp['error'] ) ? $api_resp['error'] : 'unknown';
-            error_log('[BANCARD DEBUG] process_payment FAILED: API error - ' . $error_msg);
-            WC_Bancard_Logger::error( 'process_payment failed: ' . $error_msg );
+            WC_Bancard_Logger::error( 'process_payment failed for order #' . $order_id . ': ' . $error_msg );
             wc_add_notice( __( 'Bancard: failed to create payment.', 'wc-bancard' ), 'error' );
             return array( 'result' => 'fail' );
         }
 
         $process_id = $api_resp['process_id'];
-        error_log('[BANCARD DEBUG] API exitosa, process_id: ' . $process_id);
         update_post_meta( $order_id, WC_BANCARD_META_PROCESS_ID, $process_id );
+        WC_Bancard_Logger::info( sprintf( 'process_payment: order #%d, process_id: %s, redirecting to Bancard', $order_id, $process_id ) );
 
-        // Redirect to hosted payment
-        $redirect = WC_Bancard_API::payment_redirect_url( $process_id );
-        error_log('[BANCARD DEBUG] URL de redirección: ' . $redirect);
-
-        error_log('[BANCARD DEBUG] process_payment SUCCESS, redirigiendo...');
         return array(
             'result'   => 'success',
-            'redirect' => $redirect,
+            'redirect' => WC_Bancard_API::payment_redirect_url( $process_id ),
         );
     }
 

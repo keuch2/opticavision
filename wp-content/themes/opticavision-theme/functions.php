@@ -1899,18 +1899,21 @@ function optica_vision_change_currency_symbol($currency_symbol, $currency) {
 }
 
 /**
- * Cambiar estado inicial de pedidos Bancard de 'on-hold' a 'processing'
- * Esto se ejecuta después de que el usuario completa el pago en Bancard
- * pero antes de que llegue la confirmación del webhook
+ * REMOVED: Premature Bancard order status change
+ * 
+ * The previous code here used the 'woocommerce_checkout_order_processed' hook
+ * to set Bancard orders to 'processing' immediately at checkout — BEFORE the
+ * customer was even redirected to Bancard's payment page. This caused:
+ * 1. "Payment received" emails sent before the customer paid
+ * 2. Orders marked as 'processing' even when payment was never completed
+ * 
+ * The correct flow is:
+ * - Order stays 'pending' after checkout
+ * - Customer is redirected to Bancard to pay
+ * - Bancard sends server-to-server confirmation to the webhook endpoint
+ * - The webhook controller calls $order->payment_complete() only on success (response_code '00')
+ * - WooCommerce then sets the order to 'processing' and sends the confirmation email
  */
-add_action('woocommerce_checkout_order_processed', 'optica_vision_bancard_set_processing_status', 10, 3);
-function optica_vision_bancard_set_processing_status($order_id, $posted_data, $order) {
-    // Solo aplicar para pagos con Bancard
-    if ($order->get_payment_method() === 'bancard') {
-        // Cambiar de 'pending' u 'on-hold' a 'processing'
-        $order->update_status('processing', __('Pago procesado con Bancard - Esperando confirmación.', 'opticavision-theme'));
-    }
-}
 
 // ==== 5. RATE LIMIT: max 2 registrations per IP per hour ====
 add_action( 'woocommerce_created_customer', function( $customer_id ) {
