@@ -73,6 +73,59 @@ class WC_Bancard_API {
     }
 
     /**
+     * Query Bancard for the payment status of an order.
+     *
+     * @param WC_Order $order
+     * @return array { status: success|error, confirmed: bool, response_code?: string, raw?: array, error?: string }
+     */
+    public static function get_confirmation( $order ) {
+        $settings = wc_bancard_get_settings();
+        $public  = isset( $settings['public_key'] ) ? $settings['public_key'] : '';
+        $private = isset( $settings['private_key'] ) ? $settings['private_key'] : '';
+
+        if ( empty( $public ) || empty( $private ) ) {
+            return array( 'status' => 'error', 'confirmed' => false, 'error' => 'Missing Bancard keys' );
+        }
+
+        $shop_process_id = (int) $order->get_id();
+        $token = md5( $private . $shop_process_id . 'get_confirmation' );
+
+        $payload = array(
+            'public_key' => $public,
+            'operation'  => array(
+                'token'           => $token,
+                'shop_process_id' => $shop_process_id,
+            ),
+        );
+
+        $url  = trailingslashit( self::base_url( $settings ) ) . 'vpos/api/0.3/single_buy/confirmations';
+        $resp = self::post_json( $url, $payload );
+
+        if ( is_wp_error( $resp ) ) {
+            WC_Bancard_Logger::error( 'get_confirmation error: ' . $resp->get_error_message() );
+            return array( 'status' => 'error', 'confirmed' => false, 'error' => $resp->get_error_message() );
+        }
+
+        $data = json_decode( wp_remote_retrieve_body( $resp ), true );
+        $code = wp_remote_retrieve_response_code( $resp );
+        WC_Bancard_Logger::info( 'get_confirmation response code ' . $code . ' body: ' . wp_json_encode( $data ) );
+
+        if ( $code >= 200 && $code < 300 && isset( $data['status'] ) && 'success' === $data['status'] ) {
+            $confirmation = isset( $data['confirmation'] ) ? $data['confirmation'] : array();
+            $response_code = isset( $confirmation['response_code'] ) ? (string) $confirmation['response_code'] : '';
+            return array(
+                'status'        => 'success',
+                'confirmed'     => ( '00' === $response_code ),
+                'response_code' => $response_code,
+                'confirmation'  => $confirmation,
+                'raw'           => $data,
+            );
+        }
+
+        return array( 'status' => 'error', 'confirmed' => false, 'error' => 'Unexpected response', 'raw' => $data );
+    }
+
+    /**
      * Perform rollback for the given order.
      *
      * @param WC_Order $order

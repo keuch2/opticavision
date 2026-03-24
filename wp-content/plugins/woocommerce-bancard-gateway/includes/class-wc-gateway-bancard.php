@@ -20,6 +20,9 @@ class WC_Gateway_Bancard extends WC_Payment_Gateway {
 
         add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
         add_action( 'woocommerce_thankyou_' . $this->id, array( $this, 'thankyou_page' ) );
+
+        // Standard WooCommerce IPN callback: /?wc-api=bancard
+        add_action( 'woocommerce_api_bancard', array( $this, 'handle_webhook' ) );
     }
 
     public function init_form_fields() {
@@ -96,16 +99,56 @@ class WC_Gateway_Bancard extends WC_Payment_Gateway {
         echo '</table>';
     }
 
+    /**
+     * Handle Bancard webhook via WooCommerce API callback (/?wc-api=bancard).
+     */
+    public function handle_webhook() {
+        $raw_body = file_get_contents( 'php://input' );
+        WC_Bancard_Logger::info( '[WC-API] Webhook received via /?wc-api=bancard. Body length: ' . strlen( $raw_body ) );
+
+        $response = WC_Bancard_Webhook_Controller::handle_confirmation_raw( $raw_body );
+
+        status_header( $response['code'] );
+        header( 'Content-Type: application/json' );
+        echo wp_json_encode( $response['body'] );
+        exit;
+    }
+
     public function thankyou_page( $order_id ) {
-        // Mensajes contextualizados a resultado
         $order = wc_get_order( $order_id );
         if ( ! $order ) {
             return;
         }
-        $is_bancard = $order->get_payment_method() === $this->id;
-        if ( ! $is_bancard ) {
+        if ( $order->get_payment_method() !== $this->id ) {
             return;
         }
+
+        // If order is still pending, query Bancard for the actual payment status.
+        // This handles the case where the server-to-server webhook was blocked/delayed.
+        if ( $order->has_status( 'pending' ) ) {
+            WC_Bancard_Logger::info( sprintf( '[THANKYOU] Order %d still pending on return. Querying Bancard for status...', $order_id ) );
+            $result = WC_Bancard_API::get_confirmation( $order );
+
+            if ( ! empty( $result['confirmed'] ) ) {
+                $confirmation = isset( $result['confirmation'] ) ? $result['confirmation'] : array();
+                $ticket = isset( $confirmation['ticket_number'] ) ? $confirmation['ticket_number'] : '';
+                $auth   = isset( $confirmation['authorization_number'] ) ? $confirmation['authorization_number'] : '';
+
+                $order->payment_complete( $ticket );
+                $order->add_order_note( sprintf(
+                    'Bancard: pago confirmado vía consulta directa (return_url). Ticket: %s, Autorización: %s',
+                    $ticket, $auth
+                ) );
+                WC_Bancard_Logger::info( sprintf( '[THANKYOU] Order %d confirmed via get_confirmation. New status: %s', $order_id, $order->get_status() ) );
+            } elseif ( isset( $result['response_code'] ) && '00' !== $result['response_code'] && '' !== $result['response_code'] ) {
+                WC_Bancard_Logger::info( sprintf( '[THANKYOU] Order %d payment not approved. Code: %s', $order_id, $result['response_code'] ) );
+            } else {
+                WC_Bancard_Logger::info( sprintf( '[THANKYOU] Order %d status still undetermined from Bancard.', $order_id ) );
+            }
+            // Re-read order to get updated status
+            $order = wc_get_order( $order_id );
+        }
+
         $has_error = (bool) get_post_meta( $order_id, WC_BANCARD_META_ERROR, true );
         if ( $has_error && ! $order->is_paid() ) {
             echo '<p class="woocommerce-notice woocommerce-notice--error">' . esc_html__( 'Unfortunately, an error has occurred while completing the payment.', 'wc-bancard' ) . '</p>';

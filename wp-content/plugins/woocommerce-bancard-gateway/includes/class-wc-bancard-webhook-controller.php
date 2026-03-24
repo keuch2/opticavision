@@ -89,6 +89,12 @@ class WC_Bancard_Webhook_Controller {
 
         WC_Bancard_Logger::info( sprintf( '[WEBHOOK] Order %d found. Current status: %s', $shop_process_id, $order->get_status() ) );
 
+        // Idempotency: if order is already paid, do not process again.
+        if ( $order->is_paid() ) {
+            WC_Bancard_Logger::info( sprintf( '[WEBHOOK] Order %d already paid (status: %s). Skipping.', $shop_process_id, $order->get_status() ) );
+            return array( 'code' => 200, 'body' => array( 'status' => 'success', 'info' => 'order already paid' ) );
+        }
+
         $codes_es = array(
             '00' => 'Transacción aprobada',
             '05' => 'Tarjeta inhabilitada',

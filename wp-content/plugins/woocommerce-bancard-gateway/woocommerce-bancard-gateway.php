@@ -71,8 +71,13 @@ function wc_bancard_init() {
         return $methods;
     } );
 
-    // Optional: register REST routes (we keep legacy /bancard/confirmation.php as official callback)
+    // Register REST route (alternative callback) and WC-API callback (primary)
     add_action( 'rest_api_init', [ 'WC_Bancard_Webhook_Controller', 'register_routes' ] );
+
+    // Protect Bancard pending orders from WooCommerce auto-cancellation.
+    // WooCommerce cancels unpaid pending orders after the "Hold stock" timeout.
+    // For Bancard, the webhook may arrive late, so we must prevent premature cancellation.
+    add_filter( 'woocommerce_cancel_unpaid_order', 'wc_bancard_prevent_auto_cancel', 10, 2 );
     
     // Register Bancard for WooCommerce Blocks
     if ( class_exists( 'Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType' ) ) {
@@ -82,6 +87,55 @@ function wc_bancard_init() {
     }
 }
 add_action( 'plugins_loaded', 'wc_bancard_init', 11 );
+
+/**
+ * Prevent WooCommerce from auto-cancelling Bancard pending orders.
+ *
+ * WooCommerce cancels unpaid pending orders after the "Hold stock" timeout.
+ * For redirect-based gateways like Bancard, the webhook may arrive later,
+ * so we query Bancard's API before allowing cancellation.
+ *
+ * @param bool     $cancel Whether to cancel the order.
+ * @param WC_Order $order  The order being evaluated.
+ * @return bool
+ */
+function wc_bancard_prevent_auto_cancel( $cancel, $order ) {
+    if ( ! $cancel || ! $order ) {
+        return $cancel;
+    }
+
+    if ( 'bancard' !== $order->get_payment_method() ) {
+        return $cancel;
+    }
+
+    // Only protect orders less than 24 hours old.
+    $created = $order->get_date_created();
+    if ( $created && ( time() - $created->getTimestamp() ) > DAY_IN_SECONDS ) {
+        WC_Bancard_Logger::info( sprintf( '[AUTO-CANCEL] Order %d is older than 24h. Allowing cancellation.', $order->get_id() ) );
+        return $cancel;
+    }
+
+    // Query Bancard for the actual payment status before cancelling.
+    WC_Bancard_Logger::info( sprintf( '[AUTO-CANCEL] Order %d is Bancard pending. Querying Bancard before cancelling...', $order->get_id() ) );
+    $result = WC_Bancard_API::get_confirmation( $order );
+
+    if ( ! empty( $result['confirmed'] ) ) {
+        $confirmation = isset( $result['confirmation'] ) ? $result['confirmation'] : array();
+        $ticket = isset( $confirmation['ticket_number'] ) ? $confirmation['ticket_number'] : '';
+        $auth   = isset( $confirmation['authorization_number'] ) ? $confirmation['authorization_number'] : '';
+
+        $order->payment_complete( $ticket );
+        $order->add_order_note( sprintf(
+            'Bancard: pago confirmado vía verificación anti-cancelación. Ticket: %s, Autorización: %s',
+            $ticket, $auth
+        ) );
+        WC_Bancard_Logger::info( sprintf( '[AUTO-CANCEL] Order %d confirmed! Preventing cancellation. Status: %s', $order->get_id(), $order->get_status() ) );
+        return false; // Do not cancel — payment was actually completed.
+    }
+
+    WC_Bancard_Logger::info( sprintf( '[AUTO-CANCEL] Order %d not confirmed by Bancard. Allowing cancellation.', $order->get_id() ) );
+    return $cancel;
+}
 
 /**
  * Load plugin textdomain
