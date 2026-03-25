@@ -60,6 +60,36 @@ jQuery( function ( $ ) {
 	$( 'input[name="mco_tipo_seleccion"]:checked' ).closest( '.mco-radio-option' ).addClass( 'active' );
 
 	// ----------------------------------------------------------------
+	// Seleccionar / deseleccionar todas las categorías
+	// ----------------------------------------------------------------
+	function actualizarContadorCategorias() {
+		var total      = $( 'input[name="mco_categorias[]"]' ).length;
+		var marcadas   = $( 'input[name="mco_categorias[]"]:checked' ).length;
+		var $contador  = $( '#mco-contador-categorias' );
+		if ( total > 0 ) {
+			$contador.text( marcadas + ' / ' + total + ' seleccionadas' );
+		}
+	}
+
+	$( '#mco-seleccionar-todas-cats' ).on( 'click', function () {
+		$( 'input[name="mco_categorias[]"]' ).prop( 'checked', true );
+		actualizarContadorCategorias();
+	} );
+
+	$( '#mco-deseleccionar-todas-cats' ).on( 'click', function () {
+		$( 'input[name="mco_categorias[]"]' ).prop( 'checked', false );
+		actualizarContadorCategorias();
+	} );
+
+	// Actualizar contador al cambiar cualquier checkbox de categoría.
+	$( document ).on( 'change', 'input[name="mco_categorias[]"]', function () {
+		actualizarContadorCategorias();
+	} );
+
+	// Inicializar contador al cargar.
+	actualizarContadorCategorias();
+
+	// ----------------------------------------------------------------
 	// Búsqueda de productos (debounce 400ms)
 	// ----------------------------------------------------------------
 	$( '#mco-buscar-producto' ).on( 'input', function () {

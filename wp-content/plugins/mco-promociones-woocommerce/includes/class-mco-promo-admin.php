@@ -420,7 +420,18 @@ class MCO_Promo_Admin {
 									<!-- Panel: Por categoría -->
 									<div id="mco-panel-categoria" class="mco-panel"
 									     style="<?php echo 'categoria' !== $tipo_seleccion ? 'display:none;' : ''; ?>">
-										<p class="description"><?php esc_html_e( 'Selecciona una o más categorías:', 'mco-promociones' ); ?></p>
+										<div class="mco-categorias-header">
+											<p class="description" style="margin:0;"><?php esc_html_e( 'Selecciona una o más categorías:', 'mco-promociones' ); ?></p>
+											<div class="mco-categorias-acciones">
+												<button type="button" id="mco-seleccionar-todas-cats" class="button button-small">
+													<?php esc_html_e( 'Seleccionar todas', 'mco-promociones' ); ?>
+												</button>
+												<button type="button" id="mco-deseleccionar-todas-cats" class="button button-small">
+													<?php esc_html_e( 'Deseleccionar todas', 'mco-promociones' ); ?>
+												</button>
+												<span id="mco-contador-categorias" class="mco-cat-counter"></span>
+											</div>
+										</div>
 										<div class="mco-categorias-grid">
 											<?php if ( ! is_wp_error( $categorias_wc ) && ! empty( $categorias_wc ) ) : ?>
 												<?php foreach ( $categorias_wc as $cat ) : ?>
