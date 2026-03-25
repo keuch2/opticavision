@@ -29,6 +29,8 @@
 !wp-content/plugins/woocommerce-bancard-gateway/**
 !wp-content/plugins/optica-debug/
 !wp-content/plugins/optica-debug/**
+!wp-content/plugins/mco-promociones-woocommerce/
+!wp-content/plugins/mco-promociones-woocommerce/**
 
 # ===== Custom Theme =====
 !wp-content/themes/opticavision-theme/
