@@ -123,6 +123,12 @@ function opticavision_get_product_badges($product) {
         $badges[] = '<span class="product-badge out-of-stock">' . __('Sin Stock', 'opticavision-theme') . '</span>';
     }
     
+    /**
+     * Permite que plugins externos agreguen badges personalizados.
+     * Uso: add_filter('opticavision_custom_badges', function($badges, $product) { ... }, 10, 2);
+     */
+    $badges = apply_filters('opticavision_custom_badges', $badges, $product);
+
     return implode('', $badges);
 }
 

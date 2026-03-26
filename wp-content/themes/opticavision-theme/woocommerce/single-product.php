@@ -81,19 +81,66 @@ while (have_posts()) :
             <div class="product-layout">
                 <!-- Product Image -->
                 <div class="product-image-section">
-                    <div class="product-image-container">
-                        <img src="<?php echo esc_url($product_image_url); ?>" 
-                             alt="<?php echo esc_attr($product_alt); ?>" 
-                             class="product-main-image"
-                             loading="lazy"
-                             onerror="this.src='<?php echo esc_js(wc_placeholder_img_src('large')); ?>'; this.onerror=null;"
-                             onload="console.log('Product image loaded: <?php echo esc_js($product_image_url); ?>');"
-                             style="display: block !important; visibility: visible !important; opacity: 1 !important; position: relative !important; z-index: 1 !important;">
-                        
-                        <?php if ($discount_percentage > 0): ?>
-                            <div class="discount-badge">
-                                <?php printf(__('Ahorra %d%%', 'opticavision-theme'), $discount_percentage); ?>
+                    <div class="product-gallery-wrapper">
+                        <!-- Imagen principal -->
+                        <div class="product-main-image-container">
+                            <img src="<?php echo esc_url($product_image_url); ?>"
+                                 alt="<?php echo esc_attr($product_alt); ?>"
+                                 id="product-main-img"
+                                 class="product-main-image"
+                                 loading="lazy"
+                                 onerror="this.src='<?php echo esc_js(wc_placeholder_img_src('large')); ?>'; this.onerror=null;"
+                                 style="display: block !important; visibility: visible !important; opacity: 1 !important; position: relative !important; z-index: 1 !important;">
+
+                            <?php if ($discount_percentage > 0): ?>
+                                <div class="discount-badge">
+                                    <?php printf(__('Ahorra %d%%', 'opticavision-theme'), $discount_percentage); ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php do_action('opticavision_single_product_badges', $product); ?>
+                        </div>
+
+                        <!-- Miniaturas de galería -->
+                        <?php
+                        $gallery_image_ids = $product->get_gallery_image_ids();
+                        if (!empty($gallery_image_ids)):
+                            // Construir array completo: imagen destacada + galería
+                            $all_thumbs = array();
+                            if ($thumbnail_id) {
+                                $all_thumbs[] = array(
+                                    'id'   => $thumbnail_id,
+                                    'src'  => $product_image_url,
+                                    'alt'  => $product_alt,
+                                    'active' => true,
+                                );
+                            }
+                            foreach ($gallery_image_ids as $gal_id) {
+                                $gal_large = wp_get_attachment_image_src($gal_id, 'large');
+                                if (!$gal_large) continue;
+                                $gal_alt = get_post_meta($gal_id, '_wp_attachment_image_alt', true) ?: $product_name;
+                                $all_thumbs[] = array(
+                                    'id'    => $gal_id,
+                                    'src'   => $gal_large[0],
+                                    'alt'   => $gal_alt,
+                                    'active' => false,
+                                );
+                            }
+                        ?>
+                        <div class="product-gallery-thumbs">
+                            <?php foreach ($all_thumbs as $thumb):
+                                $thumb_img = wp_get_attachment_image_src($thumb['id'], 'thumbnail');
+                                $thumb_src = $thumb_img ? $thumb_img[0] : $thumb['src'];
+                            ?>
+                            <div class="gallery-thumb <?php echo $thumb['active'] ? 'active' : ''; ?>"
+                                 data-src="<?php echo esc_url($thumb['src']); ?>"
+                                 data-alt="<?php echo esc_attr($thumb['alt']); ?>">
+                                <img src="<?php echo esc_url($thumb_src); ?>"
+                                     alt="<?php echo esc_attr($thumb['alt']); ?>"
+                                     loading="lazy">
                             </div>
+                            <?php endforeach; ?>
+                        </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -160,8 +207,8 @@ while (have_posts()) :
                     </div>
 
                     <!-- Product SKU -->
-                    <?php if ($product->get_sku()): ?>
-                        <div class="product-sku">
+                    <?php if ($product->get_sku() || $product->is_type('variable')): ?>
+                        <div class="product-sku" data-original-sku="<?php echo esc_attr($product->get_sku()); ?>">
                             <span class="sku-label"><?php _e('SKU:', 'opticavision-theme'); ?></span>
                             <span class="sku-value"><?php echo esc_html($product->get_sku()); ?></span>
                         </div>
@@ -382,6 +429,31 @@ while (have_posts()) :
         // Handle invalid/unavailable variations
         $('.variations_form').on('reset_image', function() {
             console.log('⚠️ Variation unavailable');
+        });
+
+        // Gallery thumbnail switching
+        $(document).on('click', '.gallery-thumb', function() {
+            var $thumb = $(this);
+            var newSrc = $thumb.data('src');
+            var newAlt = $thumb.data('alt');
+            $('.gallery-thumb').removeClass('active');
+            $thumb.addClass('active');
+            var $mainImg = $('#product-main-img');
+            $mainImg.animate({ opacity: 0.3 }, 120, function() {
+                $mainImg.attr('src', newSrc).attr('alt', newAlt);
+                $mainImg.animate({ opacity: 1 }, 180);
+            });
+        });
+
+        // Actualizar imagen principal cuando cambia la variación
+        $('.variations_form').on('found_variation', function(event, variation) {
+            if (variation.image && variation.image.url && variation.image.url !== '') {
+                var $mainImg = $('#product-main-img');
+                $mainImg.animate({ opacity: 0.3 }, 120, function() {
+                    $mainImg.attr('src', variation.image.url).attr('alt', variation.image.alt || '');
+                    $mainImg.animate({ opacity: 1 }, 180);
+                });
+            }
         });
 
         // Track product view for analytics

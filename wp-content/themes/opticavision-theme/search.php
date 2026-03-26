@@ -40,11 +40,12 @@ $is_product_search = true;
                     // Create a new query for products with the search term
                     $paged = (get_query_var('paged')) ? get_query_var('paged') : 1;
                     $product_query = new WP_Query(array(
-                        'post_type' => 'product',
-                        's' => $search_query,
-                        'posts_per_page' => 24,
-                        'paged' => $paged,
-                        'post_status' => 'publish'
+                        'post_type'        => 'product',
+                        's'                => $search_query,
+                        'posts_per_page'   => 24,
+                        'paged'            => $paged,
+                        'post_status'      => 'publish',
+                        'optica_sku_search' => true, // Habilita búsqueda parcial por SKU
                     ));
                     
                     

@@ -916,3 +916,104 @@ nav.woocommerce-breadcrumb {
 .cart-totals {
     background-color: #ffffff;
 }
+
+/* ==========================================================================
+   MÓDULO 5 — GALERÍA DE IMÁGENES EN PRODUCTO SINGULAR
+   ========================================================================== */
+
+.product-gallery-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.product-main-image-container {
+    position: relative;
+    background: #f9f9f9;
+    border-radius: 8px;
+    overflow: hidden;
+    line-height: 0;
+}
+
+.product-main-image-container .product-main-image {
+    width: 100%;
+    height: auto;
+    max-height: 520px;
+    object-fit: contain;
+    border-radius: 8px;
+    transition: opacity 0.2s ease;
+}
+
+/* Miniaturas de galería */
+.product-gallery-thumbs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gallery-thumb {
+    width: 72px;
+    height: 72px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+    flex-shrink: 0;
+    background: #f9f9f9;
+}
+
+.gallery-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.gallery-thumb:hover {
+    border-color: #999;
+    transform: scale(1.05);
+}
+
+.gallery-thumb.active {
+    border-color: #e2001a;
+    transform: scale(1.05);
+}
+
+/* ==========================================================================
+   MÓDULO 1 — SKU DINÁMICO EN PRODUCTOS VARIABLES
+   ========================================================================== */
+
+.product-sku {
+    font-size: 0.875rem;
+    color: #666;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.product-sku .sku-label {
+    font-weight: 600;
+    color: #444;
+}
+
+.product-sku .sku-value {
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+/* ==========================================================================
+   RESPONSIVE GALERÍA
+   ========================================================================== */
+
+@media (max-width: 576px) {
+    .gallery-thumb {
+        width: 56px;
+        height: 56px;
+    }
+
+    .product-main-image-container .product-main-image {
+        max-height: 320px;
+    }
+}

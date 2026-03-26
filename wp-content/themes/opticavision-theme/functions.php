@@ -31,12 +31,10 @@ function optica_vision_disable_blocks_features($enabled, $feature) {
     return $enabled;
 }
 
-// Desactivar completamente WooCommerce Blocks
+// Desactivar WooCommerce Blocks (checkout/cart), mantener galería nativa
 add_action('after_setup_theme', 'optica_vision_remove_blocks_support', 100);
 function optica_vision_remove_blocks_support() {
-    remove_theme_support('wc-product-gallery-zoom');
-    remove_theme_support('wc-product-gallery-lightbox');
-    remove_theme_support('wc-product-gallery-slider');
+    // Solo desactivar blocks de checkout/cart — no tocar la galería de productos
 }
 
 // Forzar shortcodes clásicos en lugar de bloques
@@ -276,6 +274,17 @@ function opticavision_theme_scripts() {
         OPTICAVISION_THEME_VERSION,
         true
     );
+
+    // SKU dinámico en productos variables — solo en página de producto singular
+    if (is_product()) {
+        wp_enqueue_script(
+            'opticavision-variation-sku',
+            OPTICAVISION_THEME_URI . '/assets/js/variation-sku.js',
+            array('jquery', 'wc-add-to-cart-variation'),
+            OPTICAVISION_THEME_VERSION,
+            true
+        );
+    }
 
     // Localize script for AJAX with WooCommerce translations
     wp_localize_script('opticavision-main', 'opticavision_ajax', array(
@@ -1259,53 +1268,65 @@ function opticavision_exclude_products_without_images_or_stock($query) {
 }
 
 /**
- * Habilitar búsqueda de productos por SKU
- * Permite encontrar productos ingresando su SKU en el buscador
+ * Búsqueda por SKU — redirección exacta
+ * Si el término de búsqueda coincide exactamente con un SKU, redirige a ese producto.
  */
-add_action('pre_get_posts', 'opticavision_search_by_sku');
-function opticavision_search_by_sku($query) {
-    // Solo en búsquedas del frontend
-    if (is_admin() || !$query->is_search() || !$query->is_main_query()) {
+add_action('template_redirect', 'opticavision_sku_exact_redirect');
+function opticavision_sku_exact_redirect() {
+    if (!is_search()) {
         return;
     }
-    
-    // Solo si hay un término de búsqueda
+    $term = trim(get_search_query());
+    if (empty($term)) {
+        return;
+    }
+    $product_id = wc_get_product_id_by_sku($term);
+    if (!$product_id) {
+        return;
+    }
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        return;
+    }
+    // Si es una variación, redirigir al producto padre
+    $redirect_id = $product->is_type('variation') ? $product->get_parent_id() : $product_id;
+    if (get_post_status($redirect_id) === 'publish') {
+        wp_redirect(get_permalink($redirect_id));
+        exit;
+    }
+}
+
+/**
+ * Búsqueda por SKU — coincidencia parcial
+ * Extiende la cláusula WHERE de WP_Query para incluir el campo _sku en la búsqueda.
+ * Solo se activa cuando la query tiene el argumento 'optica_sku_search' => true.
+ */
+add_filter('posts_search', 'opticavision_sku_posts_search', 10, 2);
+function opticavision_sku_posts_search($search, $query) {
+    global $wpdb;
+    if (!$query->get('optica_sku_search') || empty($search)) {
+        return $search;
+    }
     $search_term = $query->get('s');
     if (empty($search_term)) {
-        return;
+        return $search;
     }
-    
-    // Buscar productos por SKU
-    $sku_products = new WP_Query(array(
-        'post_type' => 'product',
-        'posts_per_page' => -1,
-        'fields' => 'ids',
-        'meta_query' => array(
-            array(
-                'key' => '_sku',
-                'value' => $search_term,
-                'compare' => 'LIKE'
-            )
-        )
-    ));
-    
-    // Si encontramos productos por SKU, agregarlos a la búsqueda principal
-    if (!empty($sku_products->posts)) {
-        // Obtener los post__in existentes o crear array vacío
-        $post__in = $query->get('post__in');
-        if (!is_array($post__in)) {
-            $post__in = array();
-        }
-        
-        // Combinar con los productos encontrados por SKU
-        $post__in = array_merge($post__in, $sku_products->posts);
-        $post__in = array_unique($post__in);
-        
-        // Si tenemos IDs, establecerlos en la query
-        if (!empty($post__in)) {
-            $query->set('post__in', $post__in);
-        }
+    $like = '%' . $wpdb->esc_like($search_term) . '%';
+    $sku_clause = $wpdb->prepare(
+        " OR EXISTS (
+            SELECT 1 FROM {$wpdb->postmeta} pm_sku
+            WHERE pm_sku.post_id = {$wpdb->posts}.ID
+              AND pm_sku.meta_key = '_sku'
+              AND pm_sku.meta_value LIKE %s
+        )",
+        $like
+    );
+    // Insertar la condición OR antes del último cierre de paréntesis
+    $pos = strrpos(rtrim($search), ')');
+    if ($pos !== false) {
+        $search = substr($search, 0, $pos) . $sku_clause . ')';
     }
+    return $search;
 }
 
 /**

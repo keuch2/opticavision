@@ -1,13 +1,57 @@
 <?php
 /**
  * Template Name: Marcas
- * 
+ *
  * Página que muestra todas las marcas del catálogo en cuadrícula
  * con enlaces a sus respectivas páginas de categoría
- * 
+ *
  * @package OpticaVision_Theme
  * @since 1.0.0
  */
+
+/**
+ * Verifica si una categoría tiene al menos un producto publicado con stock.
+ * Usa un transient por 12 horas para evitar consultas repetidas.
+ *
+ * @param WP_Term $term
+ * @return bool
+ */
+function opticavision_marcas_category_has_stock($term) {
+    return opticavision_marcas_instock_count($term->term_id) > 0;
+}
+
+/**
+ * Cuenta los productos con stock disponible en una categoría.
+ *
+ * @param int $term_id
+ * @return int
+ */
+function opticavision_marcas_instock_count($term_id) {
+    $transient_key = 'ov_marca_stock_' . $term_id;
+    $cached        = get_transient($transient_key);
+    if ($cached !== false) {
+        return (int) $cached;
+    }
+
+    global $wpdb;
+    $count = (int) $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(DISTINCT p.ID)
+         FROM {$wpdb->posts} p
+         INNER JOIN {$wpdb->term_relationships} tr  ON p.ID          = tr.object_id
+         INNER JOIN {$wpdb->term_taxonomy}      tt  ON tr.term_taxonomy_id = tt.term_taxonomy_id
+         INNER JOIN {$wpdb->postmeta}           pm  ON p.ID          = pm.post_id
+         WHERE tt.term_id        = %d
+           AND tt.taxonomy       = 'product_cat'
+           AND p.post_type       = 'product'
+           AND p.post_status     = 'publish'
+           AND pm.meta_key       = '_stock_status'
+           AND pm.meta_value     = 'instock'",
+        $term_id
+    ));
+
+    set_transient($transient_key, $count, 12 * HOUR_IN_SECONDS);
+    return $count;
+}
 
 get_header(); ?>
 
@@ -34,13 +78,19 @@ get_header(); ?>
             $marcas_category = get_term_by('slug', 'marcas', 'product_cat');
             if ($marcas_category) {
                 $marcas = get_terms(array(
-                    'taxonomy' => 'product_cat',
-                    'parent' => $marcas_category->term_id,
-                    'hide_empty' => false,
-                    'orderby' => 'name',
-                    'order' => 'ASC'
+                    'taxonomy'   => 'product_cat',
+                    'parent'     => $marcas_category->term_id,
+                    'hide_empty' => true,   // Excluir categorías sin productos publicados
+                    'orderby'    => 'name',
+                    'order'      => 'ASC',
                 ));
             }
+        }
+
+        // Filtrar marcas que no tienen ningún producto con stock disponible
+        if (!empty($marcas) && !is_wp_error($marcas)) {
+            $marcas = array_filter($marcas, 'opticavision_marcas_category_has_stock');
+            $marcas = array_values($marcas); // Reindexar
         }
 
         if (!empty($marcas) && !is_wp_error($marcas)): ?>
@@ -78,8 +128,8 @@ get_header(); ?>
                         }
                     }
                     
-                    // Contar productos en esta marca
-                    $product_count = $marca->count;
+                    // Contar productos con stock en esta marca
+                    $product_count = opticavision_marcas_instock_count($marca->term_id);
                     ?>
                     
                     <div class="marca-card">
