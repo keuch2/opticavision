@@ -91,9 +91,12 @@ function mco_promo_init() {
 		$admin->init();
 	}
 
-	// Registrar endpoint AJAX.
+	// Registrar endpoints AJAX.
 	add_action( 'wp_ajax_mco_promo_buscar_productos', 'mco_promo_ajax_buscar_productos' );
 	add_action( 'wp_ajax_mco_promo_verificar_conflictos', 'mco_promo_ajax_verificar_conflictos' );
+	add_action( 'wp_ajax_mco_promo_aplicar_ajax', 'mco_promo_ajax_aplicar' );
+	add_action( 'wp_ajax_mco_promo_revertir_ajax', 'mco_promo_ajax_revertir' );
+	add_action( 'wp_ajax_mco_promo_borrar_todos_ajax', 'mco_promo_ajax_borrar_todos' );
 }
 add_action( 'plugins_loaded', 'mco_promo_init' );
 
@@ -201,6 +204,80 @@ function mco_promo_ajax_buscar_productos() {
 			'total_pages' => $total_pages,
 		)
 	);
+}
+
+/**
+ * Handler AJAX para aplicar una promoción (con respuesta JSON).
+ *
+ * @return void
+ */
+function mco_promo_ajax_aplicar() {
+	$promo_id = isset( $_POST['promo_id'] ) ? absint( $_POST['promo_id'] ) : 0;
+
+	if ( ! $promo_id ) {
+		wp_send_json_error( array( 'message' => __( 'ID de promoción inválido.', 'mco-promociones' ) ) );
+	}
+
+	check_ajax_referer( 'mco_promo_accion_' . $promo_id, 'nonce' );
+
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		wp_send_json_error( array( 'message' => __( 'No autorizado.', 'mco-promociones' ) ), 403 );
+	}
+
+	$engine = new MCO_Promo_Engine();
+	$result = $engine->aplicar_promocion( $promo_id );
+
+	if ( $result ) {
+		wp_send_json_success( array( 'message' => __( 'Promoción aplicada correctamente.', 'mco-promociones' ) ) );
+	} else {
+		wp_send_json_error( array( 'message' => __( 'Error al aplicar la promoción.', 'mco-promociones' ) ) );
+	}
+}
+
+/**
+ * Handler AJAX para revertir una promoción (con respuesta JSON).
+ *
+ * @return void
+ */
+function mco_promo_ajax_revertir() {
+	$promo_id = isset( $_POST['promo_id'] ) ? absint( $_POST['promo_id'] ) : 0;
+
+	if ( ! $promo_id ) {
+		wp_send_json_error( array( 'message' => __( 'ID de promoción inválido.', 'mco-promociones' ) ) );
+	}
+
+	check_ajax_referer( 'mco_promo_accion_' . $promo_id, 'nonce' );
+
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		wp_send_json_error( array( 'message' => __( 'No autorizado.', 'mco-promociones' ) ), 403 );
+	}
+
+	$engine = new MCO_Promo_Engine();
+	$result = $engine->revertir_promocion( $promo_id );
+
+	if ( $result ) {
+		wp_send_json_success( array( 'message' => __( 'Promoción revertida correctamente.', 'mco-promociones' ) ) );
+	} else {
+		wp_send_json_error( array( 'message' => __( 'Error al revertir la promoción.', 'mco-promociones' ) ) );
+	}
+}
+
+/**
+ * Handler AJAX para eliminar todos los descuentos de todos los productos.
+ *
+ * @return void
+ */
+function mco_promo_ajax_borrar_todos() {
+	check_ajax_referer( 'mco_promo_borrar_todos', 'nonce' );
+
+	if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		wp_send_json_error( array( 'message' => __( 'No autorizado.', 'mco-promociones' ) ), 403 );
+	}
+
+	$engine    = new MCO_Promo_Engine();
+	$resultado = $engine->borrar_todos_los_descuentos();
+
+	wp_send_json_success( $resultado );
 }
 
 /**

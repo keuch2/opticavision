@@ -445,4 +445,135 @@ jQuery( function ( $ ) {
 	// Ejecutar inicialización
 	// ----------------------------------------------------------------
 	inicializar();
+
+	// ----------------------------------------------------------------
+	// Overlay de progreso (spinner CSS puro, sin dependencias externas)
+	// ----------------------------------------------------------------
+	var $overlay = null;
+
+	function mostrarOverlay( mensaje ) {
+		if ( ! $overlay ) {
+			$overlay = $(
+				'<div id="mco-overlay">' +
+				'<div class="mco-overlay-inner">' +
+				'<div class="mco-css-spinner"></div>' +
+				'<p class="mco-overlay-msg"></p>' +
+				'</div>' +
+				'</div>'
+			);
+			$( 'body' ).append( $overlay );
+		}
+		$overlay.find( '.mco-overlay-msg' ).text( mensaje );
+		$overlay.addClass( 'visible' );
+	}
+
+	function ocultarOverlay() {
+		if ( $overlay ) {
+			$overlay.removeClass( 'visible' );
+		}
+	}
+
+	function mostrarNoticeBanner( mensaje, tipo ) {
+		var $notice = $(
+			'<div class="notice notice-' + escAttr( tipo ) + ' is-dismissible mco-inline-notice">' +
+			'<p>' + escHtml( mensaje ) + '</p>' +
+			'</div>'
+		);
+		$( '.wp-heading-inline' ).closest( 'h1' ).after( $notice );
+		setTimeout( function () {
+			$notice.fadeOut( 400, function () { $( this ).remove(); } );
+		}, 4000 );
+	}
+
+	// ----------------------------------------------------------------
+	// AJAX: Interceptar formularios de Aplicar / Revertir
+	// ----------------------------------------------------------------
+	$( document ).on( 'submit', '.mco-form-accion', function ( e ) {
+		e.preventDefault();
+
+		var $form   = $( this );
+		var promoId = $form.data( 'promo-id' );
+		var nonce   = $form.data( 'nonce' );
+		var accion  = $form.data( 'accion' );
+		var $btn    = $form.find( 'button[type="submit"]' );
+
+		var msgOverlay = ( 'aplicar' === accion )
+			? mcoPromoData.textAplicando
+			: mcoPromoData.textRevirtiendo;
+
+		$btn.prop( 'disabled', true );
+		mostrarOverlay( msgOverlay );
+
+		$.post(
+			mcoPromoData.ajaxUrl,
+			{
+				action   : 'mco_promo_' + accion + '_ajax',
+				promo_id : promoId,
+				nonce    : nonce
+			},
+			function ( response ) {
+				ocultarOverlay();
+				$btn.prop( 'disabled', false );
+
+				if ( response.success ) {
+					var textOk = ( 'aplicar' === accion )
+						? mcoPromoData.textAplicada
+						: mcoPromoData.textRevertida;
+					mostrarNoticeBanner( textOk, 'success' );
+					// Recargar para reflejar el nuevo estado de la fila.
+					setTimeout( function () { window.location.reload(); }, 1200 );
+				} else {
+					var msg = ( response.data && response.data.message )
+						? response.data.message
+						: mcoPromoData.textError;
+					mostrarNoticeBanner( msg, 'error' );
+				}
+			}
+		).fail( function () {
+			ocultarOverlay();
+			$btn.prop( 'disabled', false );
+			mostrarNoticeBanner( mcoPromoData.textError, 'error' );
+		} );
+	} );
+
+	// ----------------------------------------------------------------
+	// AJAX: Eliminar todos los descuentos
+	// ----------------------------------------------------------------
+	$( document ).on( 'click', '#mco-btn-borrar-todos', function ( e ) {
+		e.preventDefault();
+
+		if ( ! window.confirm( mcoPromoData.textConfirmBorrarTodos ) ) {
+			return;
+		}
+
+		var $btn = $( this );
+		$btn.prop( 'disabled', true );
+		mostrarOverlay( mcoPromoData.textBorrandoTodos );
+
+		$.post(
+			mcoPromoData.ajaxUrl,
+			{
+				action : 'mco_promo_borrar_todos_ajax',
+				nonce  : mcoPromoData.nonceBorrarTodos
+			},
+			function ( response ) {
+				ocultarOverlay();
+				$btn.prop( 'disabled', false );
+
+				if ( response.success ) {
+					var procesados = ( response.data && response.data.procesados ) ? response.data.procesados : 0;
+					var textOk = mcoPromoData.textBorradosOk.replace( '{n}', procesados );
+					mostrarNoticeBanner( textOk, 'success' );
+					setTimeout( function () { window.location.reload(); }, 1800 );
+				} else {
+					mostrarNoticeBanner( mcoPromoData.textError, 'error' );
+				}
+			}
+		).fail( function () {
+			ocultarOverlay();
+			$btn.prop( 'disabled', false );
+			mostrarNoticeBanner( mcoPromoData.textError, 'error' );
+		} );
+	} );
+
 } );

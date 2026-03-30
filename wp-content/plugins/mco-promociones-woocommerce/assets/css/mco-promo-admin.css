@@ -342,6 +342,102 @@
 }
 
 /* ----------------------------------------------------------------
+   Botón de emergencia "Eliminar todos los descuentos"
+---------------------------------------------------------------- */
+.mco-borrar-todos-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    padding: 12px 16px;
+    background: #fcf0f1;
+    border: 1px solid #f86368;
+    border-radius: 6px;
+    flex-wrap: wrap;
+}
+
+.mco-btn-danger {
+    background: #d63638 !important;
+    border-color: #b32d2e !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    white-space: nowrap;
+}
+
+.mco-btn-danger:hover,
+.mco-btn-danger:focus {
+    background: #b32d2e !important;
+    border-color: #8c2022 !important;
+    color: #fff !important;
+}
+
+.mco-btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.mco-borrar-todos-desc {
+    font-size: 12px;
+    color: #8c2022;
+    line-height: 1.4;
+}
+
+/* ----------------------------------------------------------------
+   Overlay de operación en progreso
+---------------------------------------------------------------- */
+#mco-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 99999;
+    align-items: center;
+    justify-content: center;
+}
+
+#mco-overlay.visible {
+    display: flex;
+}
+
+.mco-overlay-inner {
+    background: #fff;
+    border-radius: 8px;
+    padding: 32px 40px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    min-width: 240px;
+}
+
+.mco-overlay-msg {
+    margin: 14px 0 0;
+    font-size: 14px;
+    color: #3c434a;
+}
+
+/* Spinner CSS puro — sin imágenes ni fuentes externas */
+.mco-css-spinner {
+    display: inline-block;
+    width: 44px;
+    height: 44px;
+    border: 4px solid #f0f0f1;
+    border-top-color: #2271b2;
+    border-radius: 50%;
+    animation: mco-spin 0.75s linear infinite;
+}
+
+@keyframes mco-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Notice inline mostrado tras acción AJAX */
+.mco-inline-notice {
+    margin: 6px 0 12px;
+}
+
+/* ----------------------------------------------------------------
    Responsive básico
 ---------------------------------------------------------------- */
 @media screen and (max-width: 782px) {

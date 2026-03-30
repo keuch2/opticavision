@@ -31,6 +31,7 @@ class MCO_Promo_Admin {
 		add_action( 'admin_post_mco_promo_aplicar', array( $this, 'manejar_aplicar' ) );
 		add_action( 'admin_post_mco_promo_revertir', array( $this, 'manejar_revertir' ) );
 		add_action( 'admin_post_mco_promo_limpiar_log', array( $this, 'manejar_limpiar_log' ) );
+		add_action( 'admin_post_mco_promo_borrar_todos', array( $this, 'manejar_borrar_todos' ) );
 	}
 
 	/**
@@ -116,14 +117,23 @@ class MCO_Promo_Admin {
 			'mco-promo-admin',
 			'mcoPromoData',
 			array(
-				'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
-				'nonce'         => wp_create_nonce( 'mco_promo_nonce' ),
-				'textBuscando'  => __( 'Buscando...', 'mco-promociones' ),
-				'textSeleccionar' => __( 'Seleccionar', 'mco-promociones' ),
-				'textRemover'   => __( 'Remover', 'mco-promociones' ),
-				'textSeleccionados' => __( 'productos seleccionados', 'mco-promociones' ),
-				'textSinResultados' => __( 'No se encontraron productos.', 'mco-promociones' ),
-				'textConflicto' => __( 'Advertencia: los siguientes productos ya tienen una promoción activa:', 'mco-promociones' ),
+				'ajaxUrl'               => admin_url( 'admin-ajax.php' ),
+				'nonce'                 => wp_create_nonce( 'mco_promo_nonce' ),
+				'nonceBorrarTodos'      => wp_create_nonce( 'mco_promo_borrar_todos' ),
+				'textBuscando'          => __( 'Buscando...', 'mco-promociones' ),
+				'textSeleccionar'       => __( 'Seleccionar', 'mco-promociones' ),
+				'textRemover'           => __( 'Remover', 'mco-promociones' ),
+				'textSeleccionados'     => __( 'productos seleccionados', 'mco-promociones' ),
+				'textSinResultados'     => __( 'No se encontraron productos.', 'mco-promociones' ),
+				'textConflicto'         => __( 'Advertencia: los siguientes productos ya tienen una promoción activa:', 'mco-promociones' ),
+				'textAplicando'         => __( 'Aplicando promoción...', 'mco-promociones' ),
+				'textRevirtiendo'       => __( 'Revirtiendo promoción...', 'mco-promociones' ),
+				'textBorrandoTodos'     => __( 'Eliminando todos los descuentos...', 'mco-promociones' ),
+				'textAplicada'          => __( 'Promoción aplicada correctamente.', 'mco-promociones' ),
+				'textRevertida'         => __( 'Promoción revertida correctamente.', 'mco-promociones' ),
+				'textBorradosOk'        => __( '{n} productos procesados. Todos los descuentos han sido eliminados.', 'mco-promociones' ),
+				'textError'             => __( 'Ocurrió un error. Por favor, recarga la página e intenta nuevamente.', 'mco-promociones' ),
+				'textConfirmBorrarTodos' => __( '¿Estás seguro? Esta acción eliminará TODOS los precios de oferta de todos los productos publicados. Se recomienda hacer una copia de seguridad antes de continuar.', 'mco-promociones' ),
 			)
 		);
 	}
@@ -162,6 +172,16 @@ class MCO_Promo_Admin {
 			<?php if ( $mensaje ) : ?>
 				<?php $this->mostrar_aviso_de_mensaje( $mensaje ); ?>
 			<?php endif; ?>
+
+			<!-- Botón de emergencia: eliminar todos los descuentos -->
+			<div class="mco-borrar-todos-area">
+				<button type="button" id="mco-btn-borrar-todos" class="button mco-btn-danger">
+					&#9888; <?php esc_html_e( 'Eliminar todos los descuentos', 'mco-promociones' ); ?>
+				</button>
+				<span class="mco-borrar-todos-desc">
+					<?php esc_html_e( 'Acción de emergencia: elimina los precios de oferta de todos los productos publicados, independientemente del historial de promociones.', 'mco-promociones' ); ?>
+				</span>
+			</div>
 
 			<table class="wp-list-table widefat fixed striped mco-promo-table">
 				<thead>
@@ -205,7 +225,11 @@ class MCO_Promo_Admin {
 								</a>
 
 								<?php if ( ! $aplicada ) : ?>
-									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;">
+									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;"
+										  class="mco-form-accion"
+										  data-promo-id="<?php echo esc_attr( $promo->ID ); ?>"
+										  data-nonce="<?php echo esc_attr( $nonce_acciones ); ?>"
+										  data-accion="aplicar">
 										<input type="hidden" name="action" value="mco_promo_aplicar">
 										<input type="hidden" name="promo_id" value="<?php echo esc_attr( $promo->ID ); ?>">
 										<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( $nonce_acciones ); ?>">
@@ -214,7 +238,11 @@ class MCO_Promo_Admin {
 										</button>
 									</form>
 								<?php else : ?>
-									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;">
+									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;"
+										  class="mco-form-accion"
+										  data-promo-id="<?php echo esc_attr( $promo->ID ); ?>"
+										  data-nonce="<?php echo esc_attr( $nonce_acciones ); ?>"
+										  data-accion="revertir">
 										<input type="hidden" name="action" value="mco_promo_revertir">
 										<input type="hidden" name="promo_id" value="<?php echo esc_attr( $promo->ID ); ?>">
 										<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( $nonce_acciones ); ?>">
@@ -802,6 +830,25 @@ class MCO_Promo_Admin {
 	}
 
 	/**
+	 * Maneja la acción de eliminar todos los descuentos (fallback sin JS).
+	 *
+	 * @return void
+	 */
+	public function manejar_borrar_todos() {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'No autorizado.', 'mco-promociones' ) );
+		}
+
+		check_admin_referer( 'mco_promo_borrar_todos' );
+
+		$engine    = new MCO_Promo_Engine();
+		$resultado = $engine->borrar_todos_los_descuentos();
+
+		wp_safe_redirect( add_query_arg( 'msg', 'borrados_todos', admin_url( 'admin.php?page=mco-promociones' ) ) );
+		exit;
+	}
+
+	/**
 	 * Calcula el estado de una promoción en base a las fechas.
 	 *
 	 * @param string $fecha_inicio Fecha de inicio (Y-m-d H:i:s).
@@ -859,16 +906,17 @@ class MCO_Promo_Admin {
 	 */
 	private function mostrar_aviso_de_mensaje( string $mensaje ) {
 		$avisos = array(
-			'guardada'       => array( 'success', __( 'Promoción guardada correctamente.', 'mco-promociones' ) ),
-			'eliminada'      => array( 'success', __( 'Promoción eliminada correctamente.', 'mco-promociones' ) ),
-			'aplicada'       => array( 'success', __( 'Promoción aplicada correctamente.', 'mco-promociones' ) ),
-			'revertida'      => array( 'success', __( 'Promoción revertida correctamente.', 'mco-promociones' ) ),
-			'error'          => array( 'error', __( 'Ocurrió un error. Por favor, intenta nuevamente.', 'mco-promociones' ) ),
+			'guardada'        => array( 'success', __( 'Promoción guardada correctamente.', 'mco-promociones' ) ),
+			'eliminada'       => array( 'success', __( 'Promoción eliminada correctamente.', 'mco-promociones' ) ),
+			'aplicada'        => array( 'success', __( 'Promoción aplicada correctamente.', 'mco-promociones' ) ),
+			'revertida'       => array( 'success', __( 'Promoción revertida correctamente.', 'mco-promociones' ) ),
+			'borrados_todos'  => array( 'success', __( 'Todos los descuentos han sido eliminados correctamente.', 'mco-promociones' ) ),
+			'error'           => array( 'error', __( 'Ocurrió un error. Por favor, intenta nuevamente.', 'mco-promociones' ) ),
 			'error_validacion' => array( 'error', __( 'Error de validación: revisa los campos del formulario.', 'mco-promociones' ) ),
-			'error_fechas'   => array( 'error', __( 'Error: la fecha de fin debe ser posterior a la fecha de inicio.', 'mco-promociones' ) ),
-			'error_guardar'  => array( 'error', __( 'Error al guardar la promoción.', 'mco-promociones' ) ),
-			'error_aplicar'  => array( 'error', __( 'Error al aplicar la promoción.', 'mco-promociones' ) ),
-			'error_revertir' => array( 'error', __( 'Error al revertir la promoción.', 'mco-promociones' ) ),
+			'error_fechas'    => array( 'error', __( 'Error: la fecha de fin debe ser posterior a la fecha de inicio.', 'mco-promociones' ) ),
+			'error_guardar'   => array( 'error', __( 'Error al guardar la promoción.', 'mco-promociones' ) ),
+			'error_aplicar'   => array( 'error', __( 'Error al aplicar la promoción.', 'mco-promociones' ) ),
+			'error_revertir'  => array( 'error', __( 'Error al revertir la promoción.', 'mco-promociones' ) ),
 		);
 
 		if ( ! isset( $avisos[ $mensaje ] ) ) {

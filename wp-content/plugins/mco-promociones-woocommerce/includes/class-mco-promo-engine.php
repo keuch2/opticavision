@@ -39,12 +39,22 @@ class MCO_Promo_Engine {
 		}
 
 		// Guardar snapshot de precios originales antes de modificar.
-		$snapshot = array();
+		$snapshot   = array();
+		$parent_ids = array(); // IDs de padres de variaciones para sincronizar caché.
 		foreach ( $producto_ids as $pid ) {
-			$snapshot[ $pid ] = array(
+			$entry = array(
 				'regular' => get_post_meta( $pid, '_regular_price', true ),
 				'sale'    => get_post_meta( $pid, '_sale_price', true ),
 			);
+			// Si es una variación, guardar el ID del padre para poder sincronizarlo al revertir.
+			if ( 'product_variation' === get_post_type( $pid ) ) {
+				$parent_id          = wp_get_post_parent_id( $pid );
+				$entry['parent_id'] = $parent_id;
+				if ( $parent_id ) {
+					$parent_ids[ $parent_id ] = true;
+				}
+			}
+			$snapshot[ $pid ] = $entry;
 		}
 		update_post_meta( $promo_id, '_mco_promo_snapshot', $snapshot );
 
@@ -72,6 +82,11 @@ class MCO_Promo_Engine {
 			}
 		}
 
+		// Sincronizar los productos padre para que los precios mín/máx indexados se actualicen.
+		if ( ! empty( $parent_ids ) ) {
+			$this->sync_productos_padre( array_keys( $parent_ids ) );
+		}
+
 		update_post_meta( $promo_id, '_mco_promo_aplicada', true );
 		$this->log( $promo_id, 'aplicada', "Promoción aplicada. Productos: {$aplicados}. Errores: {$errores}." );
 
@@ -94,13 +109,19 @@ class MCO_Promo_Engine {
 			return false;
 		}
 
-		$errores   = 0;
+		$errores    = 0;
 		$revertidos = 0;
+		$parent_ids = array(); // IDs de padres de variaciones para sincronizar caché.
 
 		foreach ( $snapshot as $pid => $precios ) {
 			$pid = absint( $pid );
 			if ( ! $pid ) {
 				continue;
+			}
+
+			// Recolectar ID del padre si esta entrada corresponde a una variación.
+			if ( isset( $precios['parent_id'] ) && $precios['parent_id'] ) {
+				$parent_ids[ $precios['parent_id'] ] = true;
 			}
 
 			$precio_regular_original = isset( $precios['regular'] ) ? $precios['regular'] : '';
@@ -131,8 +152,14 @@ class MCO_Promo_Engine {
 			}
 		}
 
+		// Sincronizar productos padre para recalcular precios min/max y limpiar transients.
+		$padres_sync = 0;
+		if ( ! empty( $parent_ids ) ) {
+			$padres_sync = $this->sync_productos_padre( array_keys( $parent_ids ) );
+		}
+
 		update_post_meta( $promo_id, '_mco_promo_aplicada', false );
-		$this->log( $promo_id, 'revertida', "Promoción revertida. Productos: {$revertidos}. Errores: {$errores}." );
+		$this->log( $promo_id, 'revertida', "Promoción revertida. Productos: {$revertidos}. Errores: {$errores}. Padres sincronizados: {$padres_sync}." );
 
 		return true;
 	}
@@ -235,6 +262,114 @@ class MCO_Promo_Engine {
 		}
 
 		return $resultado;
+	}
+
+	/**
+	 * Sincroniza los precios indexados de productos variables padres y limpia sus transients.
+	 *
+	 * Después de modificar precios en variaciones, WooCommerce mantiene valores
+	 * cacheados de _min_variation_price/_max_variation_price en el padre. Este método
+	 * fuerza el recálculo para que el catálogo refleje precios correctos.
+	 *
+	 * @param array $parent_ids Array de IDs de productos padre tipo variable.
+	 * @return int Número de padres sincronizados.
+	 */
+	private function sync_productos_padre( array $parent_ids ): int {
+		$sincronizados = 0;
+		foreach ( $parent_ids as $parent_id ) {
+			$parent_id = absint( $parent_id );
+			if ( ! $parent_id ) {
+				continue;
+			}
+			$product = wc_get_product( $parent_id );
+			if ( ! $product || ! ( $product instanceof WC_Product_Variable ) ) {
+				continue;
+			}
+			WC_Product_Variable::sync( $product );
+			wc_delete_product_transients( $parent_id );
+			$sincronizados++;
+		}
+		return $sincronizados;
+	}
+
+	/**
+	 * Elimina todos los precios de oferta de todos los productos publicados.
+	 *
+	 * Acción de emergencia: vacía _sale_price y sincroniza _price = _regular_price
+	 * para todos los productos simples y variaciones publicados, usando SQL directo
+	 * para máxima performance. Luego sincroniza los productos padre variables.
+	 *
+	 * @return array Array con 'procesados' y 'padres_sync'.
+	 */
+	public function borrar_todos_los_descuentos(): array {
+		global $wpdb;
+
+		// Permitir hasta 5 minutos para catálogos grandes.
+		set_time_limit( 300 );
+
+		// 1. Obtener IDs de productos publicados que tienen _sale_price no vacío.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$ids_con_descuento = $wpdb->get_col(
+			"SELECT DISTINCT pm.post_id
+			 FROM {$wpdb->postmeta} pm
+			 INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+			 WHERE pm.meta_key = '_sale_price'
+			   AND pm.meta_value != ''
+			   AND p.post_type IN ('product', 'product_variation')
+			   AND p.post_status = 'publish'"
+		);
+
+		if ( empty( $ids_con_descuento ) ) {
+			return array( 'procesados' => 0, 'padres_sync' => 0 );
+		}
+
+		$ids_safe = implode( ',', array_map( 'absint', $ids_con_descuento ) );
+
+		// 2. Vaciar _sale_price.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query(
+			"UPDATE {$wpdb->postmeta}
+			 SET meta_value = ''
+			 WHERE meta_key = '_sale_price'
+			   AND post_id IN ({$ids_safe})"
+		);
+
+		// 3. Sincronizar _price = _regular_price usando JOIN.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query(
+			"UPDATE {$wpdb->postmeta} pm
+			 INNER JOIN {$wpdb->postmeta} pr ON pm.post_id = pr.post_id
+			 SET pm.meta_value = pr.meta_value
+			 WHERE pm.meta_key = '_price'
+			   AND pr.meta_key = '_regular_price'
+			   AND pm.post_id IN ({$ids_safe})"
+		);
+
+		$procesados = count( $ids_con_descuento );
+
+		// 4. Invalidar transients de todos los afectados.
+		foreach ( $ids_con_descuento as $pid ) {
+			wc_delete_product_transients( absint( $pid ) );
+		}
+
+		// 5. Obtener IDs de padres variables y sincronizar precios indexados.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$parent_ids = $wpdb->get_col(
+			"SELECT DISTINCT p.post_parent
+			 FROM {$wpdb->posts} p
+			 WHERE p.ID IN ({$ids_safe})
+			   AND p.post_type = 'product_variation'
+			   AND p.post_parent > 0"
+		);
+
+		$padres_sync = 0;
+		if ( ! empty( $parent_ids ) ) {
+			$padres_sync = $this->sync_productos_padre( $parent_ids );
+		}
+
+		$this->log( 0, 'descuentos_borrados', "Todos los descuentos eliminados. Productos procesados: {$procesados}. Padres sincronizados: {$padres_sync}." );
+
+		return array( 'procesados' => $procesados, 'padres_sync' => $padres_sync );
 	}
 
 	/**
