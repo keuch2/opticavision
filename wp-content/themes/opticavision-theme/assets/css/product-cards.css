@@ -71,6 +71,14 @@
     background: #e74c3c;
 }
 
+/* Color tiers by discount percentage (overrides default .sale red) */
+.product-badge.sale-50 { background: #000000; color: #fff; }
+.product-badge.sale-40 { background: #6c757d; color: #fff; }
+.product-badge.sale-30 { background: #e74c3c; color: #fff; }
+.product-badge.sale-25 { background: #ffc107; color: #1a1a1a; }
+.product-badge.sale-20 { background: #3498db; color: #fff; }
+.product-badge.sale-15 { background: #27ae60; color: #fff; }
+
 .product-badge.new {
     background: #27ae60;
 }

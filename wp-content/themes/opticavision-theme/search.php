@@ -35,42 +35,29 @@ $is_product_search = true;
                     </h1>
                 </header>
 
+                <?php
+                // Create a new query for products with the search term
+                $paged = (get_query_var('paged')) ? get_query_var('paged') : 1;
+                $product_query = new WP_Query(array(
+                    'post_type'        => 'product',
+                    's'                => $search_query,
+                    'posts_per_page'   => 24,
+                    'paged'            => $paged,
+                    'post_status'      => 'publish',
+                    'optica_sku_search' => true, // Habilita búsqueda parcial por SKU
+                ));
+                ?>
+
                 <div class="products-grid">
                     <?php
-                    // Create a new query for products with the search term
-                    $paged = (get_query_var('paged')) ? get_query_var('paged') : 1;
-                    $product_query = new WP_Query(array(
-                        'post_type'        => 'product',
-                        's'                => $search_query,
-                        'posts_per_page'   => 24,
-                        'paged'            => $paged,
-                        'post_status'      => 'publish',
-                        'optica_sku_search' => true, // Habilita búsqueda parcial por SKU
-                    ));
-                    
-                    
                     if ($product_query->have_posts()) :
                         woocommerce_product_loop_start();
-                        
+
                         while ($product_query->have_posts()) : $product_query->the_post();
                             wc_get_template_part('content', 'product');
                         endwhile;
-                        
+
                         woocommerce_product_loop_end();
-                        
-                        // Pagination
-                        if ($product_query->max_num_pages > 1) :
-                            echo '<nav class="woocommerce-pagination">';
-                            echo paginate_links(array(
-                                'total' => $product_query->max_num_pages,
-                                'current' => $paged,
-                                'prev_text' => '&larr;',
-                                'next_text' => '&rarr;',
-                            ));
-                            echo '</nav>';
-                        endif;
-                        
-                        wp_reset_postdata();
                     else :
                         ?>
                         <p class="woocommerce-info"><?php esc_html_e('No se encontraron productos que coincidan con tu búsqueda.', 'opticavision-theme'); ?></p>
@@ -78,6 +65,21 @@ $is_product_search = true;
                     endif;
                     ?>
                 </div>
+
+                <?php
+                if ($product_query->have_posts() && $product_query->max_num_pages > 1) :
+                    echo '<nav class="woocommerce-pagination">';
+                    echo paginate_links(array(
+                        'total' => $product_query->max_num_pages,
+                        'current' => $paged,
+                        'prev_text' => '&larr;',
+                        'next_text' => '&rarr;',
+                    ));
+                    echo '</nav>';
+                endif;
+
+                wp_reset_postdata();
+                ?>
                     
                     <!-- Fallback content if no results (handled by AJAX plugin) -->
                     <div class="no-results-fallback" style="display:none;">

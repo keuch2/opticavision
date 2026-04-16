@@ -344,6 +344,7 @@ class Optica_Vision_API {
             'precio' => floatval($product['precio']),
             'existencia' => isset($product['existencia']) ? absint($product['existencia']) : 0,
             'marca' => isset($product['marca']) ? sanitize_text_field($product['marca']) : '',
+            'descuento' => isset($product['descuento']) ? floatval($product['descuento']) : 0,
         ];
     }
     

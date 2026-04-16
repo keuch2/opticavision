@@ -205,12 +205,18 @@ class Optica_Vision_Product_Sync {
         ];
         
         $tipo_name = $tipo_names[$tipo] ?? 'Otros';
-        
+
+        $price = floatval($product_data['precio']);
+        $discount = isset($product_data['descuento']) ? floatval($product_data['descuento']) : 0;
+        $sale_price = ($discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+
         return [
             'sku' => sanitize_text_field($product_data['codigo']),
             'name' => sanitize_text_field($description),
             'description' => sanitize_textarea_field($description),
-            'price' => floatval($product_data['precio']),
+            'price' => $price,
+            'sale_price' => $sale_price,
+            'discount' => $discount,
             'stock' => isset($product_data['existencia']) ? absint($product_data['existencia']) : 0,
             'brand' => sanitize_text_field($brand),
             'type' => sanitize_text_field($tipo_name),
@@ -231,6 +237,7 @@ class Optica_Vision_Product_Sync {
             $product->set_description($product_info['description']);
             $product->set_short_description($product_info['description']);
             $product->set_regular_price($product_info['price']);
+            $product->set_sale_price($product_info['sale_price']);
             $product->set_stock_quantity($product_info['stock']);
             $product->set_manage_stock(true);
             $product->set_stock_status($product_info['stock'] > 0 ? 'instock' : 'outofstock');
@@ -297,6 +304,7 @@ class Optica_Vision_Product_Sync {
             // Only update price if no manual override
             if (!get_post_meta($product_id, '_optica_vision_price_override', true)) {
                 $product->set_regular_price($product_info['price']);
+                $product->set_sale_price($product_info['sale_price']);
             }
             
             // Update stock
@@ -332,8 +340,9 @@ class Optica_Vision_Product_Sync {
         if ($product->get_name() !== $product_info['name']) return true;
         if ($product->get_description() !== $product_info['description']) return true;
         if (floatval($product->get_regular_price()) !== $product_info['price']) return true;
+        if (floatval($product->get_sale_price()) !== floatval($product_info['sale_price'])) return true;
         if (intval($product->get_stock_quantity()) !== $product_info['stock']) return true;
-        
+
         return false;
     }
     

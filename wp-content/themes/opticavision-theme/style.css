@@ -2417,13 +2417,22 @@ body {
     right: 15px;
     background: #e74c3c;
     color: white;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 24px;
     font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 1px;
     z-index: 999;
 }
+
+/* Color tiers by discount percentage (overrides default red) */
+.discount-badge.discount-50 { background: #000000; color: #fff; }
+.discount-badge.discount-40 { background: #6c757d; color: #fff; }
+.discount-badge.discount-30 { background: #e74c3c; color: #fff; }
+.discount-badge.discount-25 { background: #ffc107; color: #1a1a1a; }
+.discount-badge.discount-20 { background: #3498db; color: #fff; }
+.discount-badge.discount-15 { background: #27ae60; color: #fff; }
 
 /* Product Info Section */
 .product-info-section {

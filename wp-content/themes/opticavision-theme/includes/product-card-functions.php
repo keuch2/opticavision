@@ -97,8 +97,8 @@ function opticavision_get_product_badges($product) {
         $sale_price = (float) $product->get_sale_price();
         
         if ($regular_price > 0 && $sale_price > 0) {
-            $discount = round((($regular_price - $sale_price) / $regular_price) * 100);
-            $badges[] = '<span class="product-badge sale">-' . $discount . '%</span>';
+            $discount = (int) round((($regular_price - $sale_price) / $regular_price) * 100);
+            $badges[] = '<span class="product-badge sale sale-' . $discount . '">-' . $discount . '%</span>';
         } else {
             $badges[] = '<span class="product-badge sale">' . __('Oferta', 'opticavision-theme') . '</span>';
         }
