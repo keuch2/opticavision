@@ -456,7 +456,7 @@ class Optica_Vision_Admin {
         update_option('optica_vision_api_url', $api_url);
         update_option('optica_vision_api_username', $api_username);
         update_option('optica_vision_api_password', $api_password);
-        update_option('optica_vision_apply_api_discount', isset($_POST['apply_api_discount']) ? '1' : '0');
+        update_option('optica_vision_apply_api_discount', (($_POST['apply_api_discount'] ?? '0') === '1') ? '1' : '0');
 
         // Clear existing token to force reconnection
         delete_option('optica_vision_api_token');

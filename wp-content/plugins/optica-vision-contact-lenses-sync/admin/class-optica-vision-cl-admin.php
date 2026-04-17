@@ -737,7 +737,7 @@ class Optica_Vision_CL_Admin {
         update_option('optica_vision_cl_api_url', $api_url);
         update_option('optica_vision_cl_api_username', $api_username);
         update_option('optica_vision_cl_api_password', $api_password);
-        update_option('optica_vision_cl_apply_api_discount', isset($_POST['apply_cl_discount']) ? '1' : '0');
+        update_option('optica_vision_cl_apply_api_discount', (($_POST['apply_cl_discount'] ?? '0') === '1') ? '1' : '0');
 
         wp_send_json_success('Configuración guardada correctamente');
     }
