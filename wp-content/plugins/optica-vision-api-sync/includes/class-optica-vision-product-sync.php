@@ -208,7 +208,8 @@ class Optica_Vision_Product_Sync {
 
         $price = floatval($product_data['precio']);
         $discount = isset($product_data['descuento']) ? floatval($product_data['descuento']) : 0;
-        $sale_price = ($discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+        $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+        $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
 
         return [
             'sku' => sanitize_text_field($product_data['codigo']),
