@@ -1,35 +1,6 @@
 jQuery(document).ready(function($) {
     console.log('[CL SYNC JS] Script loaded and ready');
     
-    // Discount toggle
-    $('#apply-cl-discount').on('change', function() {
-        var $toggle = $(this);
-        var $status = $('#cl-discount-toggle-status');
-        var enabled = $toggle.is(':checked') ? 1 : 0;
-
-        $toggle.prop('disabled', true);
-        $status.text('Guardando...').show();
-
-        $.post(optica_vision_cl_ajax.ajax_url, {
-            action: 'optica_vision_cl_toggle_discount',
-            nonce: optica_vision_cl_ajax.nonce,
-            enabled: enabled
-        }, function(response) {
-            if (response.success) {
-                $status.text(response.data.message);
-            } else {
-                $status.text('Error al guardar');
-                $toggle.prop('checked', !$toggle.is(':checked'));
-            }
-            setTimeout(function() { $status.fadeOut(); }, 3000);
-            $toggle.prop('disabled', false);
-        }).fail(function() {
-            $status.text('Error de red');
-            $toggle.prop('checked', !$toggle.is(':checked'));
-            $toggle.prop('disabled', false);
-        });
-    });
-
     // Get nonce value
     var nonce = $('#optica_vision_cl_nonce').val();
     console.log('[CL SYNC JS] Nonce value:', nonce ? 'Found' : 'NOT FOUND');
@@ -356,41 +327,31 @@ jQuery(document).ready(function($) {
      */
     $('#api-settings-form').submit(function(e) {
         e.preventDefault();
-        
-        var formData = {
-            api_url: $('input[name="api_url"]').val(),
-            api_username: $('input[name="api_username"]').val(),
-            api_password: $('input[name="api_password"]').val()
-        };
-        
+
+        var $btn = $(this).find('input[type="submit"]');
+        var originalVal = $btn.val();
+        $btn.val('Guardando...').prop('disabled', true);
+
         clearLogs();
         addLog('💾 Guardando configuración...');
-        
-        // Save each setting individually
-        $.post(ajaxurl, {
-            action: 'update_option',
-            option_name: 'optica_vision_cl_api_url',
-            option_value: formData.api_url,
-            _wpnonce: nonce
-        }).done(function() {
-            return $.post(ajaxurl, {
-                action: 'update_option',
-                option_name: 'optica_vision_cl_api_username',
-                option_value: formData.api_username,
-                _wpnonce: nonce
-            });
-        }).done(function() {
-            return $.post(ajaxurl, {
-                action: 'update_option',
-                option_name: 'optica_vision_cl_api_password',
-                option_value: formData.api_password,
-                _wpnonce: nonce
-            });
-        }).done(function() {
-            addLog('✅ Configuración guardada exitosamente', 'success');
-            addLog('🔄 Recarga la página para aplicar los cambios');
+
+        $.post(optica_vision_cl_ajax.ajax_url, {
+            action: 'optica_vision_cl_save_settings',
+            nonce: optica_vision_cl_ajax.nonce,
+            api_url: $('input[name="api_url"]').val(),
+            api_username: $('input[name="api_username"]').val(),
+            api_password: $('input[name="api_password"]').val(),
+            apply_cl_discount: $('input[name="apply_cl_discount"]').is(':checked') ? '1' : '0'
+        }, function(response) {
+            if (response.success) {
+                addLog('✅ Configuración guardada exitosamente', 'success');
+            } else {
+                addLog('❌ Error: ' + (response.data || 'Error desconocido'), 'error');
+            }
         }).fail(function() {
-            addLog('❌ Error guardando la configuración', 'error');
+            addLog('❌ Error de comunicación con el servidor', 'error');
+        }).always(function() {
+            $btn.val(originalVal).prop('disabled', false);
         });
     });
     

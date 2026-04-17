@@ -80,31 +80,6 @@ jQuery(document).ready(function($) {
         }, 5000);
     }
     
-    // Discount toggle
-    $('#apply-api-discount').on('change', function() {
-        const $toggle = $(this);
-        const $status = $('#discount-toggle-status');
-        const enabled = $toggle.is(':checked') ? 1 : 0;
-
-        $toggle.prop('disabled', true);
-        $status.text('Guardando...').show();
-
-        makeSecureAjaxRequest(
-            'optica_vision_toggle_discount',
-            { enabled: enabled },
-            function(data) {
-                $status.text(data.message);
-                setTimeout(() => $status.fadeOut(), 3000);
-                $toggle.prop('disabled', false);
-            },
-            function(error) {
-                $status.text('Error: ' + error);
-                $toggle.prop('checked', !$toggle.is(':checked'));
-                $toggle.prop('disabled', false);
-            }
-        );
-    });
-
     // API Settings Form
     $('#api-settings-form').on('submit', function(e) {
         e.preventDefault();
@@ -114,6 +89,7 @@ jQuery(document).ready(function($) {
             api_url: $('input[name="api_url"]').val(),
             api_username: $('input[name="api_username"]').val(),
             api_password: $('input[name="api_password"]').val(),
+            apply_api_discount: $('input[name="apply_api_discount"]').is(':checked') ? '1' : '0',
             optica_vision_settings_nonce: $('input[name="optica_vision_settings_nonce"]').val()
         };
         

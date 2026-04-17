@@ -48,7 +48,6 @@ class Optica_Vision_Admin {
         add_action('wp_ajax_optica_vision_disable_scheduled_sync', array($this, 'ajax_disable_scheduled_sync'));
         add_action('wp_ajax_optica_vision_update_sync_interval', array($this, 'ajax_update_sync_interval'));
         add_action('wp_ajax_optica_vision_save_settings', array($this, 'ajax_save_settings'));
-        add_action('wp_ajax_optica_vision_toggle_discount', array($this, 'ajax_toggle_discount'));
         add_action('wp_ajax_optica_vision_get_sync_logs', array($this, 'ajax_get_sync_logs'));
         add_action('wp_ajax_optica_vision_restore_backup', array($this, 'ajax_restore_backup'));
         add_action('wp_ajax_optica_vision_get_backups', array($this, 'ajax_get_backups'));
@@ -191,6 +190,17 @@ class Optica_Vision_Admin {
         echo '<th scope="row">Contraseña</th>';
         echo '<td><input type="password" name="api_password" value="' . esc_attr(get_option('optica_vision_api_password', '')) . '" class="regular-text" /></td>';
         echo '</tr>';
+        $apply_discount = get_option('optica_vision_apply_api_discount', '1');
+        echo '<tr>';
+        echo '<th scope="row"><label for="apply-api-discount">Aplicar descuento de la API</label></th>';
+        echo '<td>';
+        echo '<label class="optica-toggle-switch">';
+        echo '<input type="checkbox" id="apply-api-discount" name="apply_api_discount" value="1"' . checked($apply_discount, '1', false) . ' />';
+        echo '<span class="optica-toggle-slider"></span>';
+        echo '</label>';
+        echo '<p class="description" style="margin-top:6px;">Cuando está activo, el campo <code>descuento</code> de la API se aplica como precio de oferta. Se refleja en la próxima sincronización.</p>';
+        echo '</td>';
+        echo '</tr>';
         echo '</table>';
         echo '<p class="submit">';
         echo '<input type="submit" class="button-primary" value="Guardar Configuración" />';
@@ -285,25 +295,6 @@ class Optica_Vision_Admin {
         echo '</div>'; // Cierre del contenedor de información de la API
         
         echo '</div>'; // Cierre de la tarjeta de conexión
-
-        // Sección de configuración de precios
-        $apply_discount = get_option('optica_vision_apply_api_discount', '1');
-        echo '<div class="optica-card" style="margin-bottom: 20px;">';
-        echo '<h2>Configuración de Precios</h2>';
-        echo '<table class="form-table">';
-        echo '<tr>';
-        echo '<th scope="row"><label for="apply-api-discount">Aplicar descuento de la API</label></th>';
-        echo '<td>';
-        echo '<label class="optica-toggle-switch">';
-        echo '<input type="checkbox" id="apply-api-discount"' . checked($apply_discount, '1', false) . ' />';
-        echo '<span class="optica-toggle-slider"></span>';
-        echo '</label>';
-        echo '<span id="discount-toggle-status" style="margin-left: 12px; vertical-align: middle; display: none;"></span>';
-        echo '<p class="description" style="margin-top: 8px;">Cuando está activo, el campo <code>descuento</code> recibido desde la API se aplica automáticamente como precio de oferta en WooCommerce. El cambio se refleja en la próxima sincronización.</p>';
-        echo '</td>';
-        echo '</tr>';
-        echo '</table>';
-        echo '</div>';
 
         // Sección de registros
         echo '<div class="optica-card" style="margin-top: 20px;">';
@@ -465,7 +456,8 @@ class Optica_Vision_Admin {
         update_option('optica_vision_api_url', $api_url);
         update_option('optica_vision_api_username', $api_username);
         update_option('optica_vision_api_password', $api_password);
-        
+        update_option('optica_vision_apply_api_discount', isset($_POST['apply_api_discount']) ? '1' : '0');
+
         // Clear existing token to force reconnection
         delete_option('optica_vision_api_token');
         
@@ -829,29 +821,6 @@ class Optica_Vision_Admin {
         }
     }
     
-    /**
-     * AJAX: Toggle API discount application
-     */
-    public function ajax_toggle_discount() {
-        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'optica_vision_nonce')) {
-            wp_send_json_error('Invalid security token');
-        }
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Insufficient permissions');
-        }
-
-        $enabled = isset($_POST['enabled']) ? (absint($_POST['enabled']) === 1 ? '1' : '0') : '0';
-        update_option('optica_vision_apply_api_discount', $enabled);
-
-        wp_send_json_success(array(
-            'enabled' => $enabled === '1',
-            'message' => $enabled === '1'
-                ? 'Descuento de API activado'
-                : 'Descuento de API desactivado',
-        ));
-    }
-
     /**
      * AJAX handler for getting products
      */
