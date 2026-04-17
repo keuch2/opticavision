@@ -629,18 +629,23 @@ class Optica_Vision_CL_Product_Sync {
         global $wpdb;
         $count = 0;
         $now = current_time('timestamp');
-        
+        $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+
         foreach ($updates as $item) {
             $variation_id = $item['id'];
             $data = $item['data'];
             $price = floatval($data['precio']);
+            $discount = isset($data['descuento']) ? floatval($data['descuento']) : 0;
+            $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+            $active_price = ($sale_price !== '') ? $sale_price : $price;
             $stock = floatval($data['existencia']);
             $stock_status = $stock > 0 ? 'instock' : 'outofstock';
-            
+
             // Direct meta updates - replaces wc_get_product() + save() chain
             $meta_updates = [
                 '_regular_price' => $price,
-                '_price'         => $price,
+                '_sale_price'    => $sale_price,
+                '_price'         => $active_price,
                 '_stock'         => $stock,
                 '_stock_status'  => $stock_status,
                 '_optica_vision_cl_last_sync' => $now,
@@ -712,10 +717,17 @@ class Optica_Vision_CL_Product_Sync {
                 }
             }
             
+            $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+            $discount = isset($variation_data['descuento']) ? floatval($variation_data['descuento']) : 0;
+            $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+
             $variation = new WC_Product_Variation();
             $variation->set_parent_id($product_id);
             $variation->set_sku($sku);
             $variation->set_regular_price($price);
+            if ($sale_price !== '') {
+                $variation->set_sale_price($sale_price);
+            }
             $variation->set_stock_quantity($stock);
             $variation->set_manage_stock(true);
             $variation->set_stock_status($stock > 0 ? 'instock' : 'outofstock');
@@ -760,16 +772,21 @@ class Optica_Vision_CL_Product_Sync {
     private function update_single_variation($variation_id, $variation_data) {
         try {
             global $wpdb;
-            
+
             $price = floatval($variation_data['precio']);
+            $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+            $discount = isset($variation_data['descuento']) ? floatval($variation_data['descuento']) : 0;
+            $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+            $active_price = ($sale_price !== '') ? $sale_price : $price;
             $stock = floatval($variation_data['existencia']);
             $stock_status = $stock > 0 ? 'instock' : 'outofstock';
             $now = current_time('timestamp');
-            
+
             // Direct meta updates - avoids wc_get_product() + save() overhead
             $meta_updates = [
                 '_regular_price' => $price,
-                '_price'         => $price,
+                '_sale_price'    => $sale_price,
+                '_price'         => $active_price,
                 '_stock'         => $stock,
                 '_stock_status'  => $stock_status,
                 '_optica_vision_cl_last_sync' => $now,
@@ -911,8 +928,29 @@ class Optica_Vision_CL_Product_Sync {
             update_post_meta($product_id, '_price', $price_data->min_price);
             update_post_meta($product_id, '_min_variation_price', $price_data->min_price);
             update_post_meta($product_id, '_max_variation_price', $price_data->max_price);
-            update_post_meta($product_id, '_min_variation_regular_price', $price_data->min_price);
-            update_post_meta($product_id, '_max_variation_regular_price', $price_data->max_price);
+
+            // Separate regular price range (without discounts)
+            $regular_price_data = $wpdb->get_row($wpdb->prepare("
+                SELECT
+                    MIN(CAST(pm.meta_value AS DECIMAL(10,2))) as min_price,
+                    MAX(CAST(pm.meta_value AS DECIMAL(10,2))) as max_price
+                FROM {$wpdb->postmeta} pm
+                INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                WHERE p.post_parent = %d
+                AND p.post_type = 'product_variation'
+                AND p.post_status = 'publish'
+                AND pm.meta_key = '_regular_price'
+                AND pm.meta_value != ''
+                AND pm.meta_value IS NOT NULL
+            ", $product_id));
+
+            $min_regular = ($regular_price_data && $regular_price_data->min_price !== null)
+                ? $regular_price_data->min_price : $price_data->min_price;
+            $max_regular = ($regular_price_data && $regular_price_data->max_price !== null)
+                ? $regular_price_data->max_price : $price_data->max_price;
+
+            update_post_meta($product_id, '_min_variation_regular_price', $min_regular);
+            update_post_meta($product_id, '_max_variation_regular_price', $max_regular);
         }
         
         // Calculate stock status from variations
