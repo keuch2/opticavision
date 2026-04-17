@@ -629,7 +629,7 @@ class Optica_Vision_CL_Product_Sync {
         global $wpdb;
         $count = 0;
         $now = current_time('timestamp');
-        $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+        $apply_discount = get_option('optica_vision_cl_apply_api_discount', '1') === '1';
 
         foreach ($updates as $item) {
             $variation_id = $item['id'];
@@ -717,7 +717,7 @@ class Optica_Vision_CL_Product_Sync {
                 }
             }
             
-            $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+            $apply_discount = get_option('optica_vision_cl_apply_api_discount', '1') === '1';
             $discount = isset($variation_data['descuento']) ? floatval($variation_data['descuento']) : 0;
             $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
 
@@ -774,7 +774,7 @@ class Optica_Vision_CL_Product_Sync {
             global $wpdb;
 
             $price = floatval($variation_data['precio']);
-            $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
+            $apply_discount = get_option('optica_vision_cl_apply_api_discount', '1') === '1';
             $discount = isset($variation_data['descuento']) ? floatval($variation_data['descuento']) : 0;
             $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
             $active_price = ($sale_price !== '') ? $sale_price : $price;

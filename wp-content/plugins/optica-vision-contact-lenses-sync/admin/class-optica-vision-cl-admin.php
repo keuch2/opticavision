@@ -47,7 +47,8 @@ class Optica_Vision_CL_Admin {
         add_action('wp_ajax_optica_vision_cl_force_reconnect', array($this, 'ajax_force_reconnect'));
         add_action('wp_ajax_optica_vision_cl_get_products', array($this, 'ajax_get_products'));
         add_action('wp_ajax_optica_vision_cl_debug_attributes', array($this, 'ajax_debug_attributes'));
-        
+        add_action('wp_ajax_optica_vision_cl_toggle_discount', array($this, 'ajax_toggle_cl_discount'));
+
         error_log('[CL SYNC ADMIN] All AJAX handlers registered');
     }
     
@@ -231,10 +232,38 @@ class Optica_Vision_CL_Admin {
             echo '</div>';
         }
         
+        // Sección de configuración de precios
+        $apply_cl_discount = get_option('optica_vision_cl_apply_api_discount', '1');
+        echo '<style>
+            .cl-toggle-switch{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+            .cl-toggle-switch input{opacity:0;width:0;height:0}
+            .cl-toggle-slider{position:absolute;cursor:pointer;inset:0;background:#c3c4c7;border-radius:24px;transition:background .2s}
+            .cl-toggle-slider::before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform .2s}
+            .cl-toggle-switch input:checked+.cl-toggle-slider{background:#00a32a}
+            .cl-toggle-switch input:checked+.cl-toggle-slider::before{transform:translateX(20px)}
+            .cl-toggle-switch input:disabled+.cl-toggle-slider{opacity:.6;cursor:not-allowed}
+        </style>';
+        echo '<div class="optica-card" style="margin-bottom: 20px; padding: 20px; background: white; border: 1px solid #ccd0d4; border-radius: 4px;">';
+        echo '<h2>Configuración de Precios</h2>';
+        echo '<table class="form-table">';
+        echo '<tr>';
+        echo '<th scope="row"><label for="apply-cl-discount">Aplicar descuento de la API</label></th>';
+        echo '<td>';
+        echo '<label class="cl-toggle-switch">';
+        echo '<input type="checkbox" id="apply-cl-discount"' . checked($apply_cl_discount, '1', false) . ' />';
+        echo '<span class="cl-toggle-slider"></span>';
+        echo '</label>';
+        echo '<span id="cl-discount-toggle-status" style="margin-left: 12px; vertical-align: middle; display: none;"></span>';
+        echo '<p class="description" style="margin-top: 8px;">Cuando está activo, el campo <code>descuento</code> de la API se aplica como precio de oferta en las variaciones de lentes de contacto. El cambio se refleja en la próxima sincronización.</p>';
+        echo '</td>';
+        echo '</tr>';
+        echo '</table>';
+        echo '</div>';
+
         // Nonce para seguridad
         $nonce_value = wp_create_nonce('optica_vision_cl_nonce');
         echo '<input type="hidden" id="optica_vision_cl_nonce" name="optica_vision_cl_nonce" value="' . $nonce_value . '" />';
-        
+
         echo '</div>'; // Cierre de .wrap
     }
     
@@ -694,6 +723,29 @@ class Optica_Vision_CL_Admin {
         ];
     }
     
+    /**
+     * AJAX: Toggle API discount for contact lenses
+     */
+    public function ajax_toggle_cl_discount() {
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'optica_vision_cl_nonce')) {
+            wp_send_json_error('Invalid security token');
+        }
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Insufficient permissions');
+        }
+
+        $enabled = isset($_POST['enabled']) ? (absint($_POST['enabled']) === 1 ? '1' : '0') : '0';
+        update_option('optica_vision_cl_apply_api_discount', $enabled);
+
+        wp_send_json_success(array(
+            'enabled' => $enabled === '1',
+            'message' => $enabled === '1'
+                ? 'Descuento de API activado para lentes de contacto'
+                : 'Descuento de API desactivado para lentes de contacto',
+        ));
+    }
+
     /**
      * AJAX: Debug attributes and taxonomies
      */

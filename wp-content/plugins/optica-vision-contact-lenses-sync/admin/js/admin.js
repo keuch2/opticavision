@@ -1,6 +1,35 @@
 jQuery(document).ready(function($) {
     console.log('[CL SYNC JS] Script loaded and ready');
     
+    // Discount toggle
+    $('#apply-cl-discount').on('change', function() {
+        var $toggle = $(this);
+        var $status = $('#cl-discount-toggle-status');
+        var enabled = $toggle.is(':checked') ? 1 : 0;
+
+        $toggle.prop('disabled', true);
+        $status.text('Guardando...').show();
+
+        $.post(optica_vision_cl_ajax.ajax_url, {
+            action: 'optica_vision_cl_toggle_discount',
+            nonce: optica_vision_cl_ajax.nonce,
+            enabled: enabled
+        }, function(response) {
+            if (response.success) {
+                $status.text(response.data.message);
+            } else {
+                $status.text('Error al guardar');
+                $toggle.prop('checked', !$toggle.is(':checked'));
+            }
+            setTimeout(function() { $status.fadeOut(); }, 3000);
+            $toggle.prop('disabled', false);
+        }).fail(function() {
+            $status.text('Error de red');
+            $toggle.prop('checked', !$toggle.is(':checked'));
+            $toggle.prop('disabled', false);
+        });
+    });
+
     // Get nonce value
     var nonce = $('#optica_vision_cl_nonce').val();
     console.log('[CL SYNC JS] Nonce value:', nonce ? 'Found' : 'NOT FOUND');
