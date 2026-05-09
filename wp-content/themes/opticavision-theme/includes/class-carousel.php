@@ -211,11 +211,21 @@ class OpticaVision_Carousel {
                          loading="lazy">
                 </a>
                 
-                <?php if ($is_on_sale) : ?>
-                    <span class="product-badge sale-badge">
-                        <?php esc_html_e('Oferta', 'opticavision-theme'); ?>
-                    </span>
-                <?php elseif ($product->is_featured()) : ?>
+                <?php if ($is_on_sale) :
+                    $reg = (float) $regular_price;
+                    $sal = (float) $sale_price;
+                    $disc_pct = ($reg > 0 && $sal > 0) ? (int) round((($reg - $sal) / $reg) * 100) : 0;
+                    $rendered = $disc_pct > 0 && class_exists('OpticaVision_Discount_Badges')
+                        ? OpticaVision_Discount_Badges::render_card_badge($disc_pct)
+                        : '';
+                    if ($rendered !== '') {
+                        echo $rendered;
+                    } else { ?>
+                        <span class="product-badge sale-badge">
+                            <?php esc_html_e('Oferta', 'opticavision-theme'); ?>
+                        </span>
+                    <?php }
+                elseif ($product->is_featured()) : ?>
                     <span class="product-badge featured-badge">
                         <?php esc_html_e('Destacado', 'opticavision-theme'); ?>
                     </span>

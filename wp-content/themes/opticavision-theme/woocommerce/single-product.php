@@ -93,9 +93,7 @@ while (have_posts()) :
                                  style="display: block !important; visibility: visible !important; opacity: 1 !important; position: relative !important; z-index: 1 !important;">
 
                             <?php if ($discount_percentage > 0): ?>
-                                <div class="discount-badge discount-<?php echo (int) $discount_percentage; ?>">
-                                    <?php printf(__('Ahorra %d%%', 'opticavision-theme'), $discount_percentage); ?>
-                                </div>
+                                <?php echo OpticaVision_Discount_Badges::render_single_badge($discount_percentage); ?>
                             <?php endif; ?>
 
                             <?php do_action('opticavision_single_product_badges', $product); ?>

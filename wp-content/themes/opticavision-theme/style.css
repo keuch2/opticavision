@@ -2528,13 +2528,7 @@ body {
     z-index: 999;
 }
 
-/* Color tiers by discount percentage (overrides default red) */
-.discount-badge.discount-50 { background: #000000; color: #fff; }
-.discount-badge.discount-40 { background: #6c757d; color: #fff; }
-.discount-badge.discount-30 { background: #e74c3c; color: #fff; }
-.discount-badge.discount-25 { background: #ffc107; color: #1a1a1a; }
-.discount-badge.discount-20 { background: #3498db; color: #fff; }
-.discount-badge.discount-15 { background: #27ae60; color: #fff; }
+/* Color tiers managed in WooCommerce → Etiquetas de Descuento (inline style override) */
 
 /* Product Info Section */
 .product-info-section {

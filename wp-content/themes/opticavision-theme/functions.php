@@ -10,7 +10,7 @@
 defined('ABSPATH') || exit;
 
 // Define theme constants
-define('OPTICAVISION_THEME_VERSION', '1.0.2'); // Forzar recarga de caché - Hero slider altura automática
+define('OPTICAVISION_THEME_VERSION', '1.0.3'); // Fix: badges stacking — discount tier badge ahora visible junto a NUEVO
 define('OPTICAVISION_THEME_DIR', get_template_directory());
 define('OPTICAVISION_THEME_URI', get_template_directory_uri());
 
@@ -332,6 +332,7 @@ require_once OPTICAVISION_THEME_DIR . '/includes/class-sucursales.php';
 require_once OPTICAVISION_THEME_DIR . '/includes/class-optica-contact-form.php';
 require_once OPTICAVISION_THEME_DIR . '/includes/class-optica-shipping-by-city.php';
 require_once OPTICAVISION_THEME_DIR . '/includes/class-optica-city-field-customizer.php';
+require_once OPTICAVISION_THEME_DIR . '/includes/class-optica-discount-badges.php';
 require_once OPTICAVISION_THEME_DIR . '/includes/product-card-functions.php';
 require_once OPTICAVISION_THEME_DIR . '/includes/template-functions.php';
 require_once OPTICAVISION_THEME_DIR . '/includes/ajax-handlers.php';
