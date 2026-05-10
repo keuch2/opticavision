@@ -67,10 +67,10 @@ while (have_posts()) :
     $is_in_stock = $product->is_in_stock();
     $product_description = $product->get_short_description();
     
-    // Calculate discount percentage
+    // Calculate discount percentage (handles simple and variable products).
     $discount_percentage = 0;
-    if ($product->is_on_sale() && $regular_price && $sale_price) {
-        $discount_percentage = round((($regular_price - $sale_price) / $regular_price) * 100);
+    if ($product->is_on_sale() && class_exists('OpticaVision_Discount_Badges')) {
+        $discount_percentage = OpticaVision_Discount_Badges::calculate_discount_percentage($product);
     }
     
     ?>

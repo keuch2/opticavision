@@ -74,18 +74,66 @@ class OpticaVision_Discount_Badges {
     }
 
     /* ------------------------------------------------------------------
+     * Discount calculation
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Calcula el porcentaje de descuento de un producto.
+     * Para productos variables, recorre las variaciones y devuelve el descuento máximo.
+     *
+     * @param WC_Product $product
+     * @return int Porcentaje entero (0 si no hay descuento).
+     */
+    public static function calculate_discount_percentage($product) {
+        if (!$product || !is_a($product, 'WC_Product')) {
+            return 0;
+        }
+
+        if ($product->is_type('variable')) {
+            $max_discount = 0;
+            $children = method_exists($product, 'get_visible_children') ? $product->get_visible_children() : $product->get_children();
+            foreach ($children as $child_id) {
+                $child = wc_get_product($child_id);
+                if (!$child) continue;
+                $reg  = (float) $child->get_regular_price();
+                $sale = (float) $child->get_sale_price();
+                if ($reg > 0 && $sale > 0 && $sale < $reg) {
+                    $disc = (int) round((($reg - $sale) / $reg) * 100);
+                    if ($disc > $max_discount) $max_discount = $disc;
+                }
+            }
+            return $max_discount;
+        }
+
+        $reg  = (float) $product->get_regular_price();
+        $sale = (float) $product->get_sale_price();
+        if ($reg > 0 && $sale > 0 && $sale < $reg) {
+            return (int) round((($reg - $sale) / $reg) * 100);
+        }
+
+        return 0;
+    }
+
+    /* ------------------------------------------------------------------
      * Public renderers (used by templates)
      * ------------------------------------------------------------------ */
 
     /**
      * Badge for product cards (listings). Returns HTML string or empty string.
+     * Si hay descuento pero no hay tier que matchee, usa estilo default.
      */
     public static function render_card_badge($discount_percentage) {
-        $tier = self::get_tier_for_discount($discount_percentage);
-        if (!$tier) return '';
+        $pct = (int) $discount_percentage;
+        if ($pct <= 0) return '';
 
-        $text = self::format_label($tier['label'], (int) $discount_percentage);
-        $style = sprintf('background:%s;color:%s;', esc_attr($tier['bg']), esc_attr($tier['fg']));
+        $tier = self::get_tier_for_discount($pct);
+        if ($tier) {
+            $text  = self::format_label($tier['label'], $pct);
+            $style = sprintf('background:%s;color:%s;', esc_attr($tier['bg']), esc_attr($tier['fg']));
+        } else {
+            $text  = sprintf('-%d%%', $pct);
+            $style = 'background:#e74c3c;color:#ffffff;';
+        }
 
         return sprintf(
             '<span class="product-badge sale" style="%s">%s</span>',
@@ -98,11 +146,17 @@ class OpticaVision_Discount_Badges {
      * Badge for the single product page. Returns HTML string or empty string.
      */
     public static function render_single_badge($discount_percentage) {
-        $tier = self::get_tier_for_discount($discount_percentage);
-        if (!$tier) return '';
+        $pct = (int) $discount_percentage;
+        if ($pct <= 0) return '';
 
-        $text = self::format_label($tier['label'], (int) $discount_percentage);
-        $style = sprintf('background:%s;color:%s;', esc_attr($tier['bg']), esc_attr($tier['fg']));
+        $tier = self::get_tier_for_discount($pct);
+        if ($tier) {
+            $text  = self::format_label($tier['label'], $pct);
+            $style = sprintf('background:%s;color:%s;', esc_attr($tier['bg']), esc_attr($tier['fg']));
+        } else {
+            $text  = sprintf('-%d%%', $pct);
+            $style = 'background:#e74c3c;color:#ffffff;';
+        }
 
         return sprintf(
             '<div class="discount-badge" style="%s">%s</div>',

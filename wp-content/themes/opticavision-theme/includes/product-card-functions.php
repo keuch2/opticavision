@@ -91,15 +91,11 @@ function opticavision_product_card($product_id, $args = array()) {
 function opticavision_get_product_badges($product) {
     $badges = array();
     
-    // Badge de oferta
+    // Badge de oferta — soporta productos simples y variables.
     if ($product->is_on_sale()) {
-        $regular_price = (float) $product->get_regular_price();
-        $sale_price = (float) $product->get_sale_price();
-
-        if ($regular_price > 0 && $sale_price > 0) {
-            $discount = (int) round((($regular_price - $sale_price) / $regular_price) * 100);
-            $rendered = OpticaVision_Discount_Badges::render_card_badge($discount);
-            $badges[] = $rendered !== '' ? $rendered : '<span class="product-badge sale">' . __('Oferta', 'opticavision-theme') . '</span>';
+        $discount = OpticaVision_Discount_Badges::calculate_discount_percentage($product);
+        if ($discount > 0) {
+            $badges[] = OpticaVision_Discount_Badges::render_card_badge($discount);
         } else {
             $badges[] = '<span class="product-badge sale">' . __('Oferta', 'opticavision-theme') . '</span>';
         }

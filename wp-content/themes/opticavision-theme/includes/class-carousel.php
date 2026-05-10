@@ -212,9 +212,9 @@ class OpticaVision_Carousel {
                 </a>
                 
                 <?php if ($is_on_sale) :
-                    $reg = (float) $regular_price;
-                    $sal = (float) $sale_price;
-                    $disc_pct = ($reg > 0 && $sal > 0) ? (int) round((($reg - $sal) / $reg) * 100) : 0;
+                    $disc_pct = class_exists('OpticaVision_Discount_Badges')
+                        ? OpticaVision_Discount_Badges::calculate_discount_percentage($product)
+                        : 0;
                     $rendered = $disc_pct > 0 && class_exists('OpticaVision_Discount_Badges')
                         ? OpticaVision_Discount_Badges::render_card_badge($disc_pct)
                         : '';

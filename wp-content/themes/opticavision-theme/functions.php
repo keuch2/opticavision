@@ -10,7 +10,7 @@
 defined('ABSPATH') || exit;
 
 // Define theme constants
-define('OPTICAVISION_THEME_VERSION', '1.0.3'); // Fix: badges stacking — discount tier badge ahora visible junto a NUEVO
+define('OPTICAVISION_THEME_VERSION', '1.0.4'); // Fix: discount badge handles variable products + sub-tier discounts
 define('OPTICAVISION_THEME_DIR', get_template_directory());
 define('OPTICAVISION_THEME_URI', get_template_directory_uri());
 
