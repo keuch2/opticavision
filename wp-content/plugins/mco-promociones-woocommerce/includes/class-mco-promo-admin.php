@@ -285,13 +285,15 @@ class MCO_Promo_Admin {
 		$es_edicion = $edit_id > 0;
 
 		// Valores por defecto o valores existentes al editar.
-		$titulo         = '';
-		$porcentaje     = '';
-		$fecha_inicio   = '';
-		$fecha_fin      = '';
-		$tipo_seleccion = 'todos';
-		$categorias     = array();
-		$productos      = array();
+		$titulo               = '';
+		$porcentaje           = '';
+		$fecha_inicio         = '';
+		$fecha_fin            = '';
+		$tipo_seleccion       = 'todos';
+		$categorias           = array();
+		$categorias_excluidas = array();
+		$productos            = array();
+		$productos_excluidos  = array();
 
 		if ( $es_edicion ) {
 			$promo = get_post( $edit_id );
@@ -300,13 +302,15 @@ class MCO_Promo_Admin {
 				wp_die( esc_html__( 'Promoción no encontrada.', 'mco-promociones' ) );
 			}
 
-			$titulo         = $promo->post_title;
-			$porcentaje     = get_post_meta( $edit_id, '_mco_promo_porcentaje', true );
-			$fecha_inicio   = get_post_meta( $edit_id, '_mco_promo_fecha_inicio', true );
-			$fecha_fin      = get_post_meta( $edit_id, '_mco_promo_fecha_fin', true );
-			$tipo_seleccion = get_post_meta( $edit_id, '_mco_promo_tipo_seleccion', true ) ?: 'todos';
-			$categorias     = get_post_meta( $edit_id, '_mco_promo_categorias', true ) ?: array();
-			$productos      = get_post_meta( $edit_id, '_mco_promo_productos', true ) ?: array();
+			$titulo              = $promo->post_title;
+			$porcentaje          = get_post_meta( $edit_id, '_mco_promo_porcentaje', true );
+			$fecha_inicio        = get_post_meta( $edit_id, '_mco_promo_fecha_inicio', true );
+			$fecha_fin           = get_post_meta( $edit_id, '_mco_promo_fecha_fin', true );
+			$tipo_seleccion      = get_post_meta( $edit_id, '_mco_promo_tipo_seleccion', true ) ?: 'todos';
+			$categorias           = get_post_meta( $edit_id, '_mco_promo_categorias', true ) ?: array();
+			$categorias_excluidas = get_post_meta( $edit_id, '_mco_promo_categorias_excluidas', true ) ?: array();
+			$productos            = get_post_meta( $edit_id, '_mco_promo_productos', true ) ?: array();
+			$productos_excluidos  = get_post_meta( $edit_id, '_mco_promo_productos_excluidos', true ) ?: array();
 
 			// Convertir fechas a formato datetime-local (Y-m-dTH:i).
 			if ( $fecha_inicio ) {
@@ -337,6 +341,26 @@ class MCO_Promo_Admin {
 					$thumbnail_id  = $product->get_image_id();
 					$thumbnail_url = $thumbnail_id ? wp_get_attachment_image_url( $thumbnail_id, 'thumbnail' ) : wc_placeholder_img_src( 'thumbnail' );
 					$productos_seleccionados_data[] = array(
+						'id'            => $pid,
+						'name'          => $product->get_name(),
+						'sku'           => $product->get_sku(),
+						'regular_price' => $product->get_regular_price(),
+						'thumbnail_url' => $thumbnail_url,
+					);
+				}
+			}
+		}
+
+		// Obtener datos de productos excluidos (siempre, independiente del tipo).
+		$productos_excluidos_data = array();
+		if ( ! empty( $productos_excluidos ) ) {
+			foreach ( $productos_excluidos as $pid ) {
+				$pid     = absint( $pid );
+				$product = wc_get_product( $pid );
+				if ( $product ) {
+					$thumbnail_id  = $product->get_image_id();
+					$thumbnail_url = $thumbnail_id ? wp_get_attachment_image_url( $thumbnail_id, 'thumbnail' ) : wc_placeholder_img_src( 'thumbnail' );
+					$productos_excluidos_data[] = array(
 						'id'            => $pid,
 						'name'          => $product->get_name(),
 						'sku'           => $product->get_sku(),
@@ -460,17 +484,12 @@ class MCO_Promo_Admin {
 												<span id="mco-contador-categorias" class="mco-cat-counter"></span>
 											</div>
 										</div>
-										<div class="mco-categorias-grid">
+										<div class="mco-categorias-grid mco-categorias-tree">
 											<?php if ( ! is_wp_error( $categorias_wc ) && ! empty( $categorias_wc ) ) : ?>
-												<?php foreach ( $categorias_wc as $cat ) : ?>
-													<label class="mco-cat-item">
-														<input type="checkbox" name="mco_categorias[]"
-														       value="<?php echo esc_attr( $cat->term_id ); ?>"
-														       <?php checked( in_array( (string) $cat->term_id, array_map( 'strval', $categorias ), true ) ); ?>>
-														<?php echo esc_html( $cat->name ); ?>
-														<span class="count">(<?php echo esc_html( $cat->count ); ?>)</span>
-													</label>
-												<?php endforeach; ?>
+												<?php
+												$categorias_seleccionadas_str = array_map( 'strval', $categorias );
+												$this->render_arbol_categorias( $categorias_wc, $categorias_seleccionadas_str, 0, 0 );
+												?>
 											<?php else : ?>
 												<p><?php esc_html_e( 'No hay categorías de productos.', 'mco-promociones' ); ?></p>
 											<?php endif; ?>
@@ -517,6 +536,62 @@ class MCO_Promo_Admin {
 										</script>
 									</div>
 
+								</div>
+							</div>
+
+							<!-- Panel: Exclusiones (siempre visible) -->
+							<div class="postbox" id="mco-postbox-exclusiones">
+								<h2 class="hndle"><span><?php esc_html_e( 'Exclusiones (opcional)', 'mco-promociones' ); ?></span></h2>
+								<div class="inside">
+									<p class="description" style="margin-top:0;">
+										<?php esc_html_e( 'Lo que selecciones acá quedará fuera de la promoción, sin importar el tipo de selección que uses arriba. Útil para casos como "todos los Armazones excepto Ray-Ban".', 'mco-promociones' ); ?>
+									</p>
+
+									<h4 style="margin:18px 0 6px;"><?php esc_html_e( 'Excluir categorías', 'mco-promociones' ); ?></h4>
+									<div class="mco-categorias-grid mco-categorias-tree mco-categorias-tree-excl">
+										<?php if ( ! is_wp_error( $categorias_wc ) && ! empty( $categorias_wc ) ) : ?>
+											<?php
+											$cat_excl_str = array_map( 'strval', $categorias_excluidas );
+											$this->render_arbol_categorias( $categorias_wc, $cat_excl_str, 0, 0, 'mco_categorias_excluidas[]' );
+											?>
+										<?php else : ?>
+											<p><?php esc_html_e( 'No hay categorías de productos.', 'mco-promociones' ); ?></p>
+										<?php endif; ?>
+									</div>
+
+									<h4 style="margin:18px 0 6px;"><?php esc_html_e( 'Excluir productos específicos', 'mco-promociones' ); ?></h4>
+
+									<div class="mco-buscador">
+										<input type="text" id="mco-buscar-excluido"
+										       placeholder="<?php esc_attr_e( 'Buscar producto a excluir por nombre o SKU...', 'mco-promociones' ); ?>"
+										       class="regular-text">
+										<span class="mco-spinner-excluido spinner" style="float:none;"></span>
+									</div>
+
+									<div id="mco-resultados-excluidos" class="mco-resultados"></div>
+									<div id="mco-paginacion-excluidos" class="mco-paginacion"></div>
+
+									<div id="mco-excluidos-area" class="mco-seleccionados-area">
+										<div class="mco-seleccionados-header">
+											<strong id="mco-contador-excluidos">
+												<?php printf( esc_html__( '%d productos excluidos', 'mco-promociones' ), count( $productos_excluidos ) ); ?>
+											</strong>
+											<button type="button" id="mco-limpiar-excluidos" class="button button-small">
+												<?php esc_html_e( 'Limpiar exclusiones', 'mco-promociones' ); ?>
+											</button>
+										</div>
+										<div id="mco-lista-excluidos"></div>
+									</div>
+
+									<div id="mco-hidden-excluidos">
+										<?php foreach ( $productos_excluidos as $pid ) : ?>
+											<input type="hidden" name="mco_productos_excluidos[]" value="<?php echo esc_attr( $pid ); ?>">
+										<?php endforeach; ?>
+									</div>
+
+									<script type="application/json" id="mco-productos-excluidos-iniciales">
+										<?php echo wp_json_encode( $productos_excluidos_data ); ?>
+									</script>
 								</div>
 							</div>
 
@@ -676,6 +751,20 @@ class MCO_Promo_Admin {
 			$productos = array_filter( $productos );
 		}
 
+		$productos_excluidos = array();
+		if ( isset( $_POST['mco_productos_excluidos'] ) && is_array( $_POST['mco_productos_excluidos'] ) ) {
+			$productos_excluidos = array_map( 'absint', $_POST['mco_productos_excluidos'] );
+			$productos_excluidos = array_filter( $productos_excluidos );
+			$productos_excluidos = array_values( array_unique( $productos_excluidos ) );
+		}
+
+		$categorias_excluidas = array();
+		if ( isset( $_POST['mco_categorias_excluidas'] ) && is_array( $_POST['mco_categorias_excluidas'] ) ) {
+			$categorias_excluidas = array_map( 'absint', $_POST['mco_categorias_excluidas'] );
+			$categorias_excluidas = array_filter( $categorias_excluidas );
+			$categorias_excluidas = array_values( array_unique( $categorias_excluidas ) );
+		}
+
 		// Validaciones básicas.
 		if ( empty( $titulo ) || $porcentaje <= 0 || $porcentaje >= 100 || empty( $fecha_inicio_raw ) || empty( $fecha_fin_raw ) ) {
 			wp_safe_redirect( add_query_arg( 'msg', 'error_validacion', admin_url( 'admin.php?page=mco-promociones' ) ) );
@@ -720,6 +809,8 @@ class MCO_Promo_Admin {
 		update_post_meta( $nuevo_id, '_mco_promo_tipo_seleccion', $tipo_seleccion );
 		update_post_meta( $nuevo_id, '_mco_promo_categorias', $categorias );
 		update_post_meta( $nuevo_id, '_mco_promo_productos', $productos );
+		update_post_meta( $nuevo_id, '_mco_promo_productos_excluidos', $productos_excluidos );
+		update_post_meta( $nuevo_id, '_mco_promo_categorias_excluidas', $categorias_excluidas );
 
 		wp_safe_redirect( add_query_arg( 'msg', 'guardada', admin_url( 'admin.php?page=mco-promociones' ) ) );
 		exit;
@@ -925,5 +1016,63 @@ class MCO_Promo_Admin {
 
 		list( $tipo, $texto ) = $avisos[ $mensaje ];
 		echo '<div class="notice notice-' . esc_attr( $tipo ) . ' is-dismissible"><p>' . esc_html( $texto ) . '</p></div>';
+	}
+
+	/**
+	 * Renderiza el árbol jerárquico de categorías de producto con indentación
+	 * y atributos de relación padre/hijo para que el JS pueda propagar selecciones.
+	 *
+	 * @param array $categorias_wc      Array completo de términos product_cat (de get_terms).
+	 * @param array $seleccionadas_str  Lista de IDs seleccionados como string.
+	 * @param int   $parent_id          ID del padre cuyos hijos se renderizan en esta llamada.
+	 * @param int   $depth              Nivel de profundidad (0 = raíz).
+	 * @return void
+	 */
+	private function render_arbol_categorias( array $categorias_wc, array $seleccionadas_str, int $parent_id = 0, int $depth = 0, string $field_name = 'mco_categorias[]' ) {
+		$hijos = array_filter(
+			$categorias_wc,
+			static function ( $cat ) use ( $parent_id ) {
+				return (int) $cat->parent === $parent_id;
+			}
+		);
+
+		if ( empty( $hijos ) ) {
+			return;
+		}
+
+		foreach ( $hijos as $cat ) {
+			$tiene_hijos = false;
+			foreach ( $categorias_wc as $posible_hijo ) {
+				if ( (int) $posible_hijo->parent === (int) $cat->term_id ) {
+					$tiene_hijos = true;
+					break;
+				}
+			}
+
+			$checked = in_array( (string) $cat->term_id, $seleccionadas_str, true );
+			?>
+			<div class="mco-cat-row" data-term-id="<?php echo esc_attr( $cat->term_id ); ?>"
+			     data-parent-id="<?php echo esc_attr( $cat->parent ); ?>"
+			     data-depth="<?php echo esc_attr( $depth ); ?>"
+			     style="padding-left: <?php echo esc_attr( $depth * 22 ); ?>px;">
+				<label class="mco-cat-item<?php echo $tiene_hijos ? ' mco-cat-parent' : ''; ?>">
+					<input type="checkbox" name="<?php echo esc_attr( $field_name ); ?>"
+					       value="<?php echo esc_attr( $cat->term_id ); ?>"
+					       data-term-id="<?php echo esc_attr( $cat->term_id ); ?>"
+					       <?php checked( $checked ); ?>>
+					<?php if ( $tiene_hijos ) : ?>
+						<span class="mco-cat-toggle" aria-hidden="true">▾</span>
+					<?php endif; ?>
+					<?php echo esc_html( $cat->name ); ?>
+					<span class="count">(<?php echo esc_html( $cat->count ); ?>)</span>
+				</label>
+			</div>
+			<?php
+			if ( $tiene_hijos ) {
+				echo '<div class="mco-cat-children" data-parent-id="' . esc_attr( $cat->term_id ) . '">';
+				$this->render_arbol_categorias( $categorias_wc, $seleccionadas_str, (int) $cat->term_id, $depth + 1, $field_name );
+				echo '</div>';
+			}
+		}
 	}
 }

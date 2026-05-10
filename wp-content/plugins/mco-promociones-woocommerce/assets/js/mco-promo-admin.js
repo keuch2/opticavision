@@ -19,8 +19,15 @@ jQuery( function ( $ ) {
 	var searchTimeout    = null;
 	var currentSearch    = '';
 
+	// Estado del picker de exclusiones (independiente del tipo de selección).
+	var excludedProducts    = {};
+	var excludedSearchTimeout = null;
+	var excludedCurrentPage = 1;
+	var excludedTotalPages  = 1;
+	var excludedSearch      = '';
+
 	// ----------------------------------------------------------------
-	// Inicialización: cargar productos seleccionados previos (edición)
+	// Inicialización: cargar productos seleccionados y excluidos previos (edición)
 	// ----------------------------------------------------------------
 	function inicializar() {
 		var iniciales = [];
@@ -40,6 +47,26 @@ jQuery( function ( $ ) {
 			} );
 			renderizarSeleccionados();
 		}
+
+		// Excluidos.
+		var inicialesExcl = [];
+		try {
+			var $scriptExcl = $( '#mco-productos-excluidos-iniciales' );
+			if ( $scriptExcl.length ) {
+				inicialesExcl = JSON.parse( $scriptExcl.text() );
+			}
+		} catch ( e2 ) {
+			inicialesExcl = [];
+		}
+
+		if ( inicialesExcl && inicialesExcl.length ) {
+			$.each( inicialesExcl, function ( i, product ) {
+				excludedProducts[ product.id ] = product;
+			} );
+			renderizarExcluidos();
+		}
+
+		actualizarEstadoPadres();
 	}
 
 	// ----------------------------------------------------------------
@@ -88,6 +115,61 @@ jQuery( function ( $ ) {
 
 	// Inicializar contador al cargar.
 	actualizarContadorCategorias();
+
+	// ----------------------------------------------------------------
+	// Árbol de categorías: propagación padre ↔ hijos (funciona en ambos árboles)
+	// ----------------------------------------------------------------
+	function obtenerDescendientesEnArbol( $checkbox ) {
+		var termId  = $checkbox.attr( 'data-term-id' );
+		var $tree   = $checkbox.closest( '.mco-categorias-tree' );
+		var $children = $tree.find( '.mco-cat-children[data-parent-id="' + termId + '"]' );
+		if ( ! $children.length ) {
+			return $();
+		}
+		return $children.find( 'input[type="checkbox"]' );
+	}
+
+	function actualizarEstadoPadres() {
+		$( '.mco-categorias-tree .mco-cat-parent input[type="checkbox"]' ).each( function () {
+			var $padre = $( this );
+			var $descendientes = obtenerDescendientesEnArbol( $padre );
+			if ( ! $descendientes.length ) {
+				return;
+			}
+			var marcados   = $descendientes.filter( ':checked' ).length;
+			var total      = $descendientes.length;
+			var elementoDOM = $padre.get( 0 );
+			if ( marcados === 0 || marcados === total ) {
+				elementoDOM.indeterminate = false;
+			} else {
+				elementoDOM.indeterminate = true;
+			}
+		} );
+	}
+
+	// Click en checkbox padre: propagar a todos los descendientes.
+	$( document ).on( 'change', '.mco-categorias-tree .mco-cat-parent input[type="checkbox"]', function () {
+		var $padre  = $( this );
+		var marcado = $padre.is( ':checked' );
+		obtenerDescendientesEnArbol( $padre ).prop( 'checked', marcado ).each( function () {
+			this.indeterminate = false;
+		} );
+		actualizarEstadoPadres();
+		actualizarContadorCategorias();
+	} );
+
+	// Click en hijo: recalcular indeterminate de los padres.
+	$( document ).on( 'change', '.mco-categorias-tree input[type="checkbox"]', function () {
+		if ( $( this ).closest( 'label' ).hasClass( 'mco-cat-parent' ) ) {
+			return;
+		}
+		actualizarEstadoPadres();
+	} );
+
+	// "Seleccionar todas" / "Deseleccionar todas" debe limpiar el indeterminate.
+	$( '#mco-seleccionar-todas-cats, #mco-deseleccionar-todas-cats' ).on( 'click', function () {
+		setTimeout( actualizarEstadoPadres, 0 );
+	} );
 
 	// ----------------------------------------------------------------
 	// Búsqueda de productos (debounce 400ms)
@@ -382,6 +464,202 @@ jQuery( function ( $ ) {
 				$( '#mco-promo-aviso-conflicto' ).show();
 			}
 		);
+	}
+
+	// ----------------------------------------------------------------
+	// Picker de productos excluidos
+	// ----------------------------------------------------------------
+	$( '#mco-buscar-excluido' ).on( 'input', function () {
+		clearTimeout( excludedSearchTimeout );
+		var s = $( this ).val();
+		excludedSearchTimeout = setTimeout( function () {
+			excludedSearch      = s;
+			excludedCurrentPage = 1;
+			buscarExcluidos();
+		}, 400 );
+	} );
+
+	function buscarExcluidos() {
+		var $spinner   = $( '.mco-spinner-excluido' );
+		var $resultados = $( '#mco-resultados-excluidos' );
+		var $paginacion = $( '#mco-paginacion-excluidos' );
+
+		$spinner.addClass( 'visible' );
+		$resultados.html( '<p style="padding:12px;">' + mcoPromoData.textBuscando + '</p>' );
+		$paginacion.empty();
+
+		$.post(
+			mcoPromoData.ajaxUrl,
+			{
+				action : 'mco_promo_buscar_productos',
+				nonce  : mcoPromoData.nonce,
+				s      : excludedSearch,
+				page   : excludedCurrentPage
+			},
+			function ( response ) {
+				$spinner.removeClass( 'visible' );
+
+				if ( ! response.success ) {
+					$resultados.html( '<p style="padding:12px;color:#d63638;">' + mcoPromoData.textSinResultados + '</p>' );
+					return;
+				}
+
+				var products    = response.data.products || [];
+				excludedTotalPages = response.data.total_pages || 1;
+
+				if ( ! products.length ) {
+					$resultados.html( '<p style="padding:12px;">' + mcoPromoData.textSinResultados + '</p>' );
+					return;
+				}
+
+				renderizarResultadosExcluidos( products );
+				renderizarPaginacionExcluidos();
+			}
+		).fail( function () {
+			$spinner.removeClass( 'visible' );
+			$resultados.html( '<p style="padding:12px;color:#d63638;">Error de conexión.</p>' );
+		} );
+	}
+
+	function renderizarResultadosExcluidos( products ) {
+		var html = '<table>';
+		html += '<thead><tr>';
+		html += '<th></th><th>Producto</th><th>SKU</th><th>Precio</th><th></th>';
+		html += '</tr></thead><tbody>';
+
+		$.each( products, function ( i, p ) {
+			var isExcluded = !! excludedProducts[ p.id ];
+			var imgHtml    = p.thumbnail_url
+				? '<img src="' + escAttr( p.thumbnail_url ) + '" class="mco-resultado-thumb" alt="">'
+				: '<span style="display:inline-block;width:40px;height:40px;background:#f0f0f1;border-radius:3px;"></span>';
+
+			html += '<tr data-product-id="' + escAttr( p.id ) + '">';
+			html += '<td>' + imgHtml + '</td>';
+			html += '<td class="mco-resultado-nombre">' + escHtml( p.name ) + '</td>';
+			html += '<td class="mco-resultado-sku">' + escHtml( p.sku || '—' ) + '</td>';
+			html += '<td class="mco-resultado-precio">' + escHtml( p.regular_price || '—' ) + '</td>';
+			html += '<td>';
+			if ( isExcluded ) {
+				html += '<button type="button" class="button button-small mco-btn-no-excluir" data-product=\'' + JSON.stringify( p ) + '\'>&#10003; Excluido</button>';
+			} else {
+				html += '<button type="button" class="button button-small mco-btn-excluir" data-product=\'' + JSON.stringify( p ) + '\'>Excluir</button>';
+			}
+			html += '</td>';
+			html += '</tr>';
+		} );
+		html += '</tbody></table>';
+
+		$( '#mco-resultados-excluidos' ).html( html );
+	}
+
+	function renderizarPaginacionExcluidos() {
+		if ( excludedTotalPages <= 1 ) {
+			$( '#mco-paginacion-excluidos' ).empty();
+			return;
+		}
+		var html = '';
+		if ( excludedCurrentPage > 1 ) {
+			html += '<button type="button" class="button button-small mco-ir-pagina-excl" data-page="' + ( excludedCurrentPage - 1 ) + '">&laquo;</button>';
+		}
+		for ( var i = 1; i <= excludedTotalPages; i++ ) {
+			var activeClass = ( i === excludedCurrentPage ) ? ' active' : '';
+			html += '<button type="button" class="button button-small mco-ir-pagina-excl' + activeClass + '" data-page="' + i + '">' + i + '</button>';
+		}
+		if ( excludedCurrentPage < excludedTotalPages ) {
+			html += '<button type="button" class="button button-small mco-ir-pagina-excl" data-page="' + ( excludedCurrentPage + 1 ) + '">&raquo;</button>';
+		}
+		$( '#mco-paginacion-excluidos' ).html( html );
+	}
+
+	$( '#mco-paginacion-excluidos' ).on( 'click', '.mco-ir-pagina-excl', function () {
+		excludedCurrentPage = parseInt( $( this ).data( 'page' ), 10 );
+		buscarExcluidos();
+	} );
+
+	$( '#mco-resultados-excluidos' ).on( 'click', '.mco-btn-excluir', function () {
+		var product = JSON.parse( $( this ).attr( 'data-product' ) );
+		excludedProducts[ product.id ] = product;
+		actualizarHiddenExcluidos();
+		renderizarExcluidos();
+		$( this ).closest( 'tr' ).find( '.mco-btn-excluir' ).replaceWith(
+			'<button type="button" class="button button-small mco-btn-no-excluir" data-product=\'' +
+			$( this ).attr( 'data-product' ) + '\'>&#10003; Excluido</button>'
+		);
+	} );
+
+	$( '#mco-resultados-excluidos' ).on( 'click', '.mco-btn-no-excluir', function () {
+		var product = JSON.parse( $( this ).attr( 'data-product' ) );
+		delete excludedProducts[ product.id ];
+		actualizarHiddenExcluidos();
+		renderizarExcluidos();
+		$( this ).closest( 'tr' ).find( '.mco-btn-no-excluir' ).replaceWith(
+			'<button type="button" class="button button-small mco-btn-excluir" data-product=\'' +
+			$( this ).attr( 'data-product' ) + '\'>Excluir</button>'
+		);
+	} );
+
+	$( '#mco-lista-excluidos' ).on( 'click', '.mco-btn-remover-excl', function () {
+		var pid = $( this ).data( 'id' );
+		delete excludedProducts[ pid ];
+		actualizarHiddenExcluidos();
+		renderizarExcluidos();
+		$( '#mco-resultados-excluidos tr[data-product-id="' + pid + '"] .mco-btn-no-excluir' ).each( function () {
+			var dataProduct = $( this ).attr( 'data-product' );
+			$( this ).replaceWith(
+				'<button type="button" class="button button-small mco-btn-excluir" data-product=\'' +
+				dataProduct + '\'>Excluir</button>'
+			);
+		} );
+	} );
+
+	$( '#mco-limpiar-excluidos' ).on( 'click', function () {
+		excludedProducts = {};
+		actualizarHiddenExcluidos();
+		renderizarExcluidos();
+		$( '#mco-resultados-excluidos .mco-btn-no-excluir' ).each( function () {
+			var dataProduct = $( this ).attr( 'data-product' );
+			$( this ).replaceWith(
+				'<button type="button" class="button button-small mco-btn-excluir" data-product=\'' +
+				dataProduct + '\'>Excluir</button>'
+			);
+		} );
+	} );
+
+	function renderizarExcluidos() {
+		var productos = Object.values( excludedProducts );
+		var $lista    = $( '#mco-lista-excluidos' );
+		var $contador = $( '#mco-contador-excluidos' );
+
+		$contador.text( productos.length + ' productos excluidos' );
+
+		if ( ! productos.length ) {
+			$lista.empty();
+			return;
+		}
+
+		var html = '<table class="mco-lista-seleccionados-tabla"><tbody>';
+		$.each( productos, function ( i, p ) {
+			var imgHtml = p.thumbnail_url
+				? '<img src="' + escAttr( p.thumbnail_url ) + '" class="mco-resultado-thumb" alt="" style="width:30px;height:30px;">'
+				: '';
+			html += '<tr>';
+			html += '<td style="width:36px;">' + imgHtml + '</td>';
+			html += '<td>' + escHtml( p.name ) + '</td>';
+			html += '<td style="color:#787c82;font-size:12px;">' + escHtml( p.sku || '' ) + '</td>';
+			html += '<td style="color:#787c82;font-size:12px;">' + escHtml( p.regular_price || '' ) + '</td>';
+			html += '<td style="text-align:right;width:36px;"><button type="button" class="mco-btn-remover-excl" data-id="' + escAttr( p.id ) + '" title="Remover">&times;</button></td>';
+			html += '</tr>';
+		} );
+		html += '</tbody></table>';
+		$lista.html( html );
+	}
+
+	function actualizarHiddenExcluidos() {
+		var $container = $( '#mco-hidden-excluidos' );
+		$container.empty();
+		$.each( excludedProducts, function ( pid ) {
+			$container.append( '<input type="hidden" name="mco_productos_excluidos[]" value="' + escAttr( pid ) + '">' );
+		} );
 	}
 
 	// ----------------------------------------------------------------

@@ -225,7 +225,42 @@ class MCO_Promo_Engine {
 				break;
 		}
 
-		return array_unique( $ids_resueltos );
+		$ids_resueltos = array_unique( $ids_resueltos );
+
+		// Exclusión por categorías: restar todos los productos cuyas categorías estén excluidas.
+		$cat_excluidas = get_post_meta( $promo_id, '_mco_promo_categorias_excluidas', true );
+		if ( is_array( $cat_excluidas ) && ! empty( $cat_excluidas ) ) {
+			$cat_excluidas = array_map( 'absint', $cat_excluidas );
+			$cat_excluidas = array_filter( $cat_excluidas );
+			if ( ! empty( $cat_excluidas ) ) {
+				$ids_en_cat_excl = wc_get_products(
+					array(
+						'status'   => 'publish',
+						'limit'    => -1,
+						'return'   => 'ids',
+						'type'     => array( 'simple', 'variable' ),
+						'category' => $this->obtener_slugs_categorias( $cat_excluidas ),
+					)
+				);
+				if ( ! empty( $ids_en_cat_excl ) ) {
+					$ids_excl_expandidos = $this->expandir_variables( $ids_en_cat_excl );
+					$ids_resueltos       = array_values( array_diff( $ids_resueltos, $ids_excl_expandidos ) );
+				}
+			}
+		}
+
+		// Exclusión de productos individuales.
+		$excluidos = get_post_meta( $promo_id, '_mco_promo_productos_excluidos', true );
+		if ( is_array( $excluidos ) && ! empty( $excluidos ) ) {
+			$excluidos = array_map( 'absint', $excluidos );
+			$excluidos = array_filter( $excluidos );
+			if ( ! empty( $excluidos ) ) {
+				$excluidos_expandidos = $this->expandir_variables( $excluidos );
+				$ids_resueltos        = array_values( array_diff( $ids_resueltos, $excluidos_expandidos ) );
+			}
+		}
+
+		return $ids_resueltos;
 	}
 
 	/**

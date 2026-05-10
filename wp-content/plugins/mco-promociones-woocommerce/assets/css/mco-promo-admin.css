@@ -174,6 +174,58 @@
     font-size: 12px;
 }
 
+/* Árbol jerárquico de categorías */
+.mco-categorias-tree {
+    display: block;
+    max-height: 420px;
+}
+
+.mco-categorias-tree .mco-cat-row {
+    padding: 2px 0;
+}
+
+.mco-categorias-tree .mco-cat-item.mco-cat-parent {
+    font-weight: 600;
+}
+
+.mco-categorias-tree .mco-cat-toggle {
+    color: #6c757d;
+    font-size: 10px;
+    margin-right: 2px;
+}
+
+.mco-categorias-tree .mco-cat-children {
+    /* el padding-left lo aplica cada fila por inline style según depth */
+}
+
+/* Panel de exclusiones */
+#mco-postbox-exclusiones {
+    border-left: 4px solid #dba617;
+    margin-top: 16px;
+}
+
+#mco-postbox-exclusiones .hndle {
+    background: #fff8e5;
+}
+
+.mco-btn-remover-excl {
+    background: none;
+    border: none;
+    color: #d63638;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px 8px;
+}
+
+.mco-btn-remover-excl:hover {
+    color: #b32d2e;
+}
+
+.mco-spinner-excluido.visible {
+    visibility: visible;
+}
+
 /* ----------------------------------------------------------------
    Panel de búsqueda manual
 ---------------------------------------------------------------- */

@@ -3,7 +3,7 @@
  * Plugin Name:       MCO Promociones WooCommerce
  * Plugin URI:        https://opticavision.com.py
  * Description:       Gestiona promociones de WooCommerce: descuentos por porcentaje aplicados masivamente a grupos de productos, con fechas de vigencia programables y reversión automática.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Author:            MCO / OpticaVision
  * Author URI:        https://opticavision.com.py
  * License:           GPL-2.0-or-later
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Constantes del plugin.
-define( 'MCO_PROMO_VERSION', '1.0.0' );
+define( 'MCO_PROMO_VERSION', '1.1.0' );
 define( 'MCO_PROMO_PLUGIN_FILE', __FILE__ );
 define( 'MCO_PROMO_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MCO_PROMO_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
