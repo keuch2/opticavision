@@ -209,7 +209,9 @@ class Optica_Vision_Product_Sync {
         $price = floatval($product_data['precio']);
         $discount = isset($product_data['descuento']) ? floatval($product_data['descuento']) : 0;
         $apply_discount = get_option('optica_vision_apply_api_discount', '1') === '1';
-        $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+        // null = no tocar _sale_price (preserva descuentos de MCO Promociones u otros).
+        // valor numérico = setear ese sale_price.
+        $sale_price = $apply_discount ? (($discount > 0) ? round($price * (1 - $discount / 100), 2) : '') : null;
 
         return [
             'sku' => sanitize_text_field($product_data['codigo']),
@@ -238,15 +240,17 @@ class Optica_Vision_Product_Sync {
             $product->set_description($product_info['description']);
             $product->set_short_description($product_info['description']);
             $product->set_regular_price($product_info['price']);
-            $product->set_sale_price($product_info['sale_price']);
+            if ($product_info['sale_price'] !== null) {
+                $product->set_sale_price($product_info['sale_price']);
+            }
             $product->set_stock_quantity($product_info['stock']);
             $product->set_manage_stock(true);
             $product->set_stock_status($product_info['stock'] > 0 ? 'instock' : 'outofstock');
-            
+
             // Set categories
             $category_ids = $this->get_or_create_categories($product_info['brand'], $product_info['type']);
             $product->set_category_ids($category_ids);
-        
+
             // Add custom meta data for tracking
             $product->add_meta_data('_optica_vision_sync', true);
             $product->add_meta_data('_optica_vision_last_sync', current_time('timestamp'));
@@ -305,7 +309,9 @@ class Optica_Vision_Product_Sync {
             // Only update price if no manual override
             if (!get_post_meta($product_id, '_optica_vision_price_override', true)) {
                 $product->set_regular_price($product_info['price']);
-                $product->set_sale_price($product_info['sale_price']);
+                if ($product_info['sale_price'] !== null) {
+                    $product->set_sale_price($product_info['sale_price']);
+                }
             }
             
             // Update stock
@@ -341,7 +347,7 @@ class Optica_Vision_Product_Sync {
         if ($product->get_name() !== $product_info['name']) return true;
         if ($product->get_description() !== $product_info['description']) return true;
         if (floatval($product->get_regular_price()) !== $product_info['price']) return true;
-        if (floatval($product->get_sale_price()) !== floatval($product_info['sale_price'])) return true;
+        if ($product_info['sale_price'] !== null && floatval($product->get_sale_price()) !== floatval($product_info['sale_price'])) return true;
         if (intval($product->get_stock_quantity()) !== $product_info['stock']) return true;
 
         return false;

@@ -636,20 +636,25 @@ class Optica_Vision_CL_Product_Sync {
             $data = $item['data'];
             $price = floatval($data['precio']);
             $discount = isset($data['descuento']) ? floatval($data['descuento']) : 0;
-            $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
-            $active_price = ($sale_price !== '') ? $sale_price : $price;
             $stock = floatval($data['existencia']);
             $stock_status = $stock > 0 ? 'instock' : 'outofstock';
 
             // Direct meta updates - replaces wc_get_product() + save() chain
             $meta_updates = [
                 '_regular_price' => $price,
-                '_sale_price'    => $sale_price,
-                '_price'         => $active_price,
                 '_stock'         => $stock,
                 '_stock_status'  => $stock_status,
                 '_optica_vision_cl_last_sync' => $now,
             ];
+
+            // Solo escribir _sale_price / _price cuando el toggle de descuento del API está habilitado.
+            // Cuando está apagado, preservar lo que MCO Promociones (u otras fuentes) hayan dejado.
+            if ($apply_discount) {
+                $sale_price = ($discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+                $active_price = ($sale_price !== '') ? $sale_price : $price;
+                $meta_updates['_sale_price'] = $sale_price;
+                $meta_updates['_price']      = $active_price;
+            }
             
             foreach ($meta_updates as $meta_key => $meta_value) {
                 $exists = $wpdb->get_var($wpdb->prepare(
@@ -719,14 +724,13 @@ class Optica_Vision_CL_Product_Sync {
             
             $apply_discount = get_option('optica_vision_cl_apply_api_discount', '1') === '1';
             $discount = isset($variation_data['descuento']) ? floatval($variation_data['descuento']) : 0;
-            $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
 
             $variation = new WC_Product_Variation();
             $variation->set_parent_id($product_id);
             $variation->set_sku($sku);
             $variation->set_regular_price($price);
-            if ($sale_price !== '') {
-                $variation->set_sale_price($sale_price);
+            if ($apply_discount && $discount > 0) {
+                $variation->set_sale_price(round($price * (1 - $discount / 100), 2));
             }
             $variation->set_stock_quantity($stock);
             $variation->set_manage_stock(true);
@@ -776,8 +780,6 @@ class Optica_Vision_CL_Product_Sync {
             $price = floatval($variation_data['precio']);
             $apply_discount = get_option('optica_vision_cl_apply_api_discount', '1') === '1';
             $discount = isset($variation_data['descuento']) ? floatval($variation_data['descuento']) : 0;
-            $sale_price = ($apply_discount && $discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
-            $active_price = ($sale_price !== '') ? $sale_price : $price;
             $stock = floatval($variation_data['existencia']);
             $stock_status = $stock > 0 ? 'instock' : 'outofstock';
             $now = current_time('timestamp');
@@ -785,12 +787,19 @@ class Optica_Vision_CL_Product_Sync {
             // Direct meta updates - avoids wc_get_product() + save() overhead
             $meta_updates = [
                 '_regular_price' => $price,
-                '_sale_price'    => $sale_price,
-                '_price'         => $active_price,
                 '_stock'         => $stock,
                 '_stock_status'  => $stock_status,
                 '_optica_vision_cl_last_sync' => $now,
             ];
+
+            // Solo escribir _sale_price / _price cuando el toggle de descuento del API está habilitado.
+            // Cuando está apagado, preservar lo que MCO Promociones (u otras fuentes) hayan dejado.
+            if ($apply_discount) {
+                $sale_price = ($discount > 0) ? round($price * (1 - $discount / 100), 2) : '';
+                $active_price = ($sale_price !== '') ? $sale_price : $price;
+                $meta_updates['_sale_price'] = $sale_price;
+                $meta_updates['_price']      = $active_price;
+            }
             
             foreach ($meta_updates as $meta_key => $meta_value) {
                 $exists = $wpdb->get_var($wpdb->prepare(
