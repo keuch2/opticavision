@@ -289,47 +289,69 @@ do_action( 'woocommerce_before_cart' ); ?>
 /* Responsive */
 @media (max-width: 768px) {
     .shop_table,
-    .shop_table thead,
     .shop_table tbody,
-    .shop_table th,
-    .shop_table td,
     .shop_table tr {
         display: block;
+        width: 100%;
     }
-    
-    .shop_table thead tr {
-        position: absolute;
-        top: -9999px;
-        left: -9999px;
+
+    .shop_table thead {
+        display: none;
     }
-    
+
     .shop_table tr {
         border: 1px solid #ccc;
         margin-bottom: 10px;
         padding: 10px;
         border-radius: 8px;
+        background: #fff;
     }
-    
+
     .shop_table td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
         border: none;
-        position: relative;
-        padding-left: 50%;
+        border-bottom: 1px solid #f0f0f0;
+        padding: 10px 0;
+        text-align: right;
     }
-    
+
+    .shop_table td:last-child {
+        border-bottom: none;
+    }
+
     .shop_table td:before {
-        content: attr(data-title) ": ";
-        position: absolute;
-        left: 6px;
-        width: 45%;
-        padding-right: 10px;
-        white-space: nowrap;
+        content: attr(data-title);
+        flex: 0 0 auto;
         font-weight: 600;
+        text-align: left;
+        color: #333;
     }
-    
-    .actions {
+
+    .shop_table td[data-title=""]:before,
+    .shop_table td.product-remove:before,
+    .shop_table td.product-thumbnail:before {
+        content: "";
+        display: none;
+    }
+
+    .shop_table td.product-remove,
+    .shop_table td.product-thumbnail {
+        justify-content: center;
+    }
+
+    .shop_table td.actions {
+        display: block;
         text-align: center;
     }
-    
+
+    .shop_table td.actions:before {
+        display: none;
+    }
+
     .coupon {
         display: block;
         margin-bottom: 15px;
